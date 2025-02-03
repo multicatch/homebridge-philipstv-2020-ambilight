@@ -1,14 +1,86 @@
-import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
+import { Categories, type CharacteristicValue, type Logger, type PlatformAccessory, type Service } from 'homebridge';
 
-import type { ExampleHomebridgePlatform } from './platform.js';
+import type { PhilipsTV2020Platform } from './platform.js';
+
+import request, { OptionsWithUrl } from 'request';
+
+class PhilipsApiAuth {
+  constructor(
+    readonly username: string,
+    readonly password: string,
+  ) { }
+}
+
+class PhilipsTVConfig {
+  constructor(
+    readonly api_url: string,
+    readonly api_auth: PhilipsApiAuth | undefined,
+    readonly api_timeout: number = 30000,
+  ) { }
+}
+
+class HttpClient {
+  constructor(
+    private readonly config: PhilipsTVConfig,
+    private readonly log: Logger,
+  ) { }
+
+  fetch<T>(url: string, method: string = 'GET', requestBody?: object | undefined): Promise<T> {
+    const timeout = this.config.api_timeout;
+    const body = typeof requestBody === 'object' ? JSON.stringify(requestBody) : requestBody;
+
+    const options: OptionsWithUrl = {
+      url: url,
+      body: body,
+      rejectUnauthorized: false,
+      timeout: timeout,
+      method: method,
+      followAllRedirects: true,
+    };
+
+    if (this.config.api_auth) {
+      options.forever = true;
+      options.auth = {
+        user: this.config.api_auth.username,
+        pass: this.config.api_auth.password,
+        sendImmediately: false,
+      };
+    }
+
+    return new Promise((success, fail) => {
+      this.log.debug('[%s %s] Request to TV: %s', method, url, requestBody);
+      request(options, (error, _response, body) => {
+        if (error) {
+          this.log.debug('[%s %s] Request error %s', method, url, error);
+          fail(error);
+        } else {
+          this.log.debug('[%s %s] Response from TV %s', method, url, body);
+          if (body && (body.indexOf('{') !== -1 || body.indexOf('[') !== -1)) {
+            try {
+              success(JSON.parse(body));
+            } catch (e) {
+              fail(e);
+            }
+          } else {
+            success({} as T);
+          }
+        }
+      });
+    });
+  }
+}
+
 
 /**
  * Platform Accessory
  * An instance of this class is created for each accessory your platform registers
  * Each accessory may expose multiple services of different service types.
  */
-export class ExamplePlatformAccessory {
+export class PhilipsTVAccessory {
   private service: Service;
+  private speakerService: Service;
+
+  private httpClient: HttpClient;
 
   /**
    * These are just used to create a working example
@@ -20,9 +92,32 @@ export class ExamplePlatformAccessory {
   };
 
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: PhilipsTV2020Platform,
     private readonly accessory: PlatformAccessory,
+    private readonly config: PhilipsTVConfig,
   ) {
+
+    this.httpClient = new HttpClient(config, platform.log);
+
+    this.service = this.accessory.getService(this.platform.Service.Television) || this.accessory.addService(this.platform.Service.Television);
+    this.accessory.category = Categories.TELEVISION;
+
+    this.service.getCharacteristic(this.platform.Characteristic.Active)
+      .onSet(this.setOn.bind(this))
+      .onGet(this.getOn.bind(this));
+    /*this.service.getCharacteristic(this.platform.Characteristic.AccessoryIdentifier)
+      .onSet(this.setOn.bind(this))
+      .onGet(this.getOn.bind(this));
+    this.service.getCharacteristic(this.platform.Characteristic.Active)
+      .onSet(this.setOn.bind(this))
+      .onGet(this.getOn.bind(this));*/
+  
+
+    this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker) 
+      || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
+    
+
+    /*
     // set accessory information
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
@@ -32,6 +127,7 @@ export class ExamplePlatformAccessory {
     // get the LightBulb service if it exists, otherwise create a new LightBulb service
     // you can create multiple services for each accessory
 
+    
     if (accessory.context.device.CustomService) {
       // This is only required when using Custom Services and Characteristics not support by HomeKit
       this.service = this.accessory.getService(this.platform.CustomServices[accessory.context.device.CustomService]) ||
@@ -65,7 +161,7 @@ export class ExamplePlatformAccessory {
      *
      * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
      * can use the same subtype id.)
-     */
+     * /
 
     // Example: add two "motion sensor" services to the accessory
     const motionSensorOneService = this.accessory.getService('Motion Sensor One Name')
@@ -82,7 +178,7 @@ export class ExamplePlatformAccessory {
      * Here we change update the motion sensor trigger states on and off every 10 seconds
      * the `updateCharacteristic` method.
      *
-     */
+     * /
     let motionDetected = false;
     setInterval(() => {
       // EXAMPLE - inverse the trigger
@@ -95,6 +191,7 @@ export class ExamplePlatformAccessory {
       this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
       this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
     }, 10000);
+    */
   }
 
   /**
@@ -124,15 +221,26 @@ export class ExamplePlatformAccessory {
    * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
    */
   async getOn(): Promise<CharacteristicValue> {
+    /*
     // implement your own code to check if the device is on
     const isOn = this.exampleStates.On;
 
     this.platform.log.debug('Get Characteristic On ->', isOn);
 
+    return isOn;
+    */
+
     // if you need to return an error to show the device as "Not Responding" in the Home app:
     // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
 
-    return isOn;
+    const url = this.config.api_url + 'powerstate';
+
+    return this.httpClient.fetch(url)
+      .then(data => {
+        const resp = data as Record<string, string>;
+        this.platform.log('Response %s', resp);
+        return resp.powerstate === 'On';
+      });
   }
 
   /**
@@ -146,3 +254,4 @@ export class ExamplePlatformAccessory {
     this.platform.log.debug('Set Characteristic Brightness -> ', value);
   }
 }
+

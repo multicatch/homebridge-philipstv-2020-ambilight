@@ -1,19 +1,19 @@
 {
-  "name": "homebridge-plugin-name",
-  "displayName": "Plugin Name",
+  "name": "homebridge-philipstv-2020-ambilight",
+  "displayName": "PhilipsTV 2020 with Ambilight",
   "type": "module",
   "version": "1.0.0",
   "private": true,
-  "description": "A short description about what your plugin does.",
-  "author": "Your Name",
+  "description": "Homebridge Plugin for Android Philips TV API 6 with Ambilight.",
+  "author": "multicatch",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
+  "homepage": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight",
   "repository": {
     "type": "git",
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
+    "url": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight.git"
   },
   "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
+    "url": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight/issues"
   },
   "keywords": [
     "homebridge-plugin"
@@ -33,6 +33,7 @@
     "@eslint/js": "^9.14.0",
     "@types/eslint__js": "^8.42.3",
     "@types/node": "^22.8.6",
+    "@types/request": "^2.48.12",
     "eslint": "^9.14.0",
     "homebridge": "^2.0.0-beta.0",
     "nodemon": "^3.1.7",
@@ -42,6 +43,7 @@
     "typescript-eslint": "^8.12.2"
   },
   "dependencies": {
-    "homebridge-lib": "^7.1.0"
+    "homebridge-lib": "^7.1.0",
+    "request": "^2.88.2"
   }
 }

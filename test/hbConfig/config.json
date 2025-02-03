@@ -7,7 +7,7 @@
   },
   "description": "HomeBridge HTTP Status Control",
   "plugins": [
-    "homebridge-plugin-name",
+    "homebridge-philipstv-2020-ambilight",
     "homebridge-config-ui-x"
   ],
   "platforms": [
@@ -23,8 +23,17 @@
       "debug": false
     },
     {
-      "name": "homebridge-plugin-name",
-      "platform": "ExampleHomebridgePlugin"
+      "platform": "PhilipsTV2020Platform",
+      "tvs": [
+        {
+          "name": "homebridge-philipstv-2020-ambilight",
+          "api_url": "https://192.168.1.54:1926/6/",
+          "api_auth": {
+            "username": "5l6n66UK7PYBVKAU",
+            "password": "de8d0d1911a6d3662540114e1b3a5f29a473cc413bf6b38afb97820facdcb1fb"
+          }
+        }
+      ]
     }
   ],
   "accessories": []

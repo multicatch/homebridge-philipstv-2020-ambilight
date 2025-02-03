@@ -1,16 +1,49 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "PhilipsTV2020Platform",
   "pluginType": "platform",
   "singular": true,
   "strictValidation": false,
   "schema": {
     "type": "object",
     "properties": {
-      "name": {
-        "title": "Name",
-        "type": "string",
-        "required": true,
-        "default": "Example Dynamic Platform"
+      "tvs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Philips TV Name",
+              "type": "string",
+              "required": true,
+              "default": "Philips TV"
+            },
+            "api_url": {
+              "title": "API URL",
+              "type": "string",
+              "required": true,
+              "default": "https://192.168.1.54:1926/6/"
+            },
+            "api_auth": {
+              "title": "API Authentication",
+              "type": "object",
+              "required": false,
+              "properties": {
+                "username": {
+                  "title": "API Username",
+                  "type": "string",
+                  "required": true,
+                  "default": "5l6n66UK7PYBVKAU"
+                },
+                "password": {
+                  "title": "API Password",
+                  "type": "string",
+                  "required": true,
+                  "default": "de8d0d1911a6d3662540114e1b3a5f29a473cc413bf6b38afb97820facdcb1fb"
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
