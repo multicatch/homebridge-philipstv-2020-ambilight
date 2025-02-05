@@ -3,6 +3,7 @@ import { Categories, type CharacteristicValue, type Logger, type PlatformAccesso
 import type { PhilipsTV2020Platform } from './platform.js';
 
 import request, { OptionsWithUrl } from 'request';
+import wol from 'wake_on_lan';
 
 class PhilipsApiAuth {
   constructor(
@@ -14,8 +15,9 @@ class PhilipsApiAuth {
 class PhilipsTVConfig {
   constructor(
     readonly api_url: string,
+    readonly wol_mac: string | undefined,
     readonly api_auth: PhilipsApiAuth | undefined,
-    readonly api_timeout: number = 30000,
+    readonly api_timeout: number = 3_000, // I've tested and there is no need to wait longer than 3s, longer than 3s means the TV is OFF
   ) { }
 }
 
@@ -49,23 +51,27 @@ class HttpClient {
 
     return new Promise((success, fail) => {
       this.log.debug('[%s %s] Request to TV: %s', method, url, requestBody);
-      request(options, (error, _response, body) => {
-        if (error) {
-          this.log.debug('[%s %s] Request error %s', method, url, error);
-          fail(error);
-        } else {
-          this.log.debug('[%s %s] Response from TV %s', method, url, body);
-          if (body && (body.indexOf('{') !== -1 || body.indexOf('[') !== -1)) {
-            try {
-              success(JSON.parse(body));
-            } catch (e) {
-              fail(e);
-            }
+      try {
+        request(options, (error, _response, body) => {
+          if (error) {
+            this.log.debug('[%s %s] Request error %s', method, url, error);
+            fail(error);
           } else {
-            success({} as T);
+            this.log.debug('[%s %s] Response from TV %s', method, url, body);
+            if (body && (body.indexOf('{') !== -1 || body.indexOf('[') !== -1)) {
+              try {
+                success(JSON.parse(body));
+              } catch (e) {
+                fail(e);
+              }
+            } else {
+              success({} as T);
+            }
           }
-        }
-      });
+        });
+      } catch (e) {
+        fail(e);
+      }
     });
   }
 }
@@ -98,6 +104,8 @@ export class PhilipsTVAccessory {
   ) {
 
     this.httpClient = new HttpClient(config, platform.log);
+  
+    this.wake = this.wake.bind(this);
 
     this.service = this.accessory.getService(this.platform.Service.Television) || this.accessory.addService(this.platform.Service.Television);
     this.accessory.category = Categories.TELEVISION;
@@ -105,13 +113,6 @@ export class PhilipsTVAccessory {
     this.service.getCharacteristic(this.platform.Characteristic.Active)
       .onSet(this.setOn.bind(this))
       .onGet(this.getOn.bind(this));
-    /*this.service.getCharacteristic(this.platform.Characteristic.AccessoryIdentifier)
-      .onSet(this.setOn.bind(this))
-      .onGet(this.getOn.bind(this));
-    this.service.getCharacteristic(this.platform.Characteristic.Active)
-      .onSet(this.setOn.bind(this))
-      .onGet(this.getOn.bind(this));*/
-  
 
     this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker) 
       || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
@@ -194,15 +195,50 @@ export class PhilipsTVAccessory {
     */
   }
 
+  wake(): Promise<boolean> {
+    const mac = this.config.wol_mac;
+    if (!mac) {
+      return new Promise((success, _) => {
+        this.platform.log.debug('WOL not configured');
+        success(false);
+      });
+    }
+    return new Promise((success, failure) => {
+      wol.wake(mac, error => {
+        if (error) {
+          this.platform.log.debug('WOL failed: %s', error);
+          failure(error);
+        } else {
+          this.platform.log.debug('WOL successful!');
+          success(true);
+        }
+      });
+    });
+  }
+
   /**
    * Handle "SET" requests from HomeKit
    * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
    */
   async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
+    const url = this.config.api_url + 'powerstate';
 
-    this.platform.log.debug('Set Characteristic On ->', value);
+    await this.getOn()
+      .then(isOn => {
+        if (isOn && !value) {
+          this.platform.log.debug('TV is ON, turning off...');
+          return this.httpClient.fetch(url, 'POST', {
+            'powerstate': 'Standby',
+          });
+        } else if (!isOn && value) {
+          this.platform.log.debug('TV is OFF, waking up...');
+          return this.wake().then(_ => this.httpClient.fetch(url, 'POST', {
+            'powerstate': 'On',
+          }));
+        } else {
+          this.platform.log.debug('Is TV on? %s. Should be on? %s. Nothing to do.', isOn, value);
+        }
+      });
   }
 
   /**
@@ -221,25 +257,17 @@ export class PhilipsTVAccessory {
    * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
    */
   async getOn(): Promise<CharacteristicValue> {
-    /*
-    // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
-
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    return isOn;
-    */
-
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
     const url = this.config.api_url + 'powerstate';
 
     return this.httpClient.fetch(url)
       .then(data => {
         const resp = data as Record<string, string>;
-        this.platform.log('Response %s', resp);
         return resp.powerstate === 'On';
+      })
+      .catch(e => {
+        this.platform.log('Cannot fetch TV power status, is it off?');
+        this.platform.log.debug('Error fetching TV status: %s', e);
+        return false;
       });
   }
 
