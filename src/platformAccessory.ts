@@ -12,6 +12,14 @@ class PhilipsApiAuth {
   ) { }
 }
 
+class PhilipsTVMetadata {
+  constructor(
+    readonly model: string = 'Generic TV',
+    readonly manufacturer: string = 'Philips',
+    readonly serialNumber: string | undefined,
+  ) {}
+}
+
 class PhilipsTVConfig {
   constructor(
     readonly name: string | undefined,
@@ -20,6 +28,7 @@ class PhilipsTVConfig {
     readonly api_auth: PhilipsApiAuth | undefined,
     readonly api_timeout: number = 3_000, // I've tested and there is no need to wait longer than 3s, longer than 3s means the TV is OFF
     readonly auto_update_interval: number = 10_000,
+    readonly metadata: PhilipsTVMetadata | undefined,
   ) { }
 }
 
@@ -146,9 +155,7 @@ class StateCache<T> {
 
 
 /**
- * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
+ * Philips TV accessory
  */
 export class PhilipsTVAccessory {
   private service: Service;
@@ -179,51 +186,17 @@ export class PhilipsTVAccessory {
     this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker)
       || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
 
-
-    this.service.setCharacteristic(this.platform.Characteristic.Name, this.config.name || 'Philips TV');
-
-    /*
-    // set accessory information
+    const metadata = this.config.metadata;
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+      .setCharacteristic(this.platform.Characteristic.Name, config.name || 'Philips TV')
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, metadata?.manufacturer || 'Philips')
+      .setCharacteristic(this.platform.Characteristic.Model, metadata?.model || 'Default-Model')
+      .setCharacteristic(this.platform.Characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
 
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
-
-    
-    if (accessory.context.device.CustomService) {
-      // This is only required when using Custom Services and Characteristics not support by HomeKit
-      this.service = this.accessory.getService(this.platform.CustomServices[accessory.context.device.CustomService]) ||
-        this.accessory.addService(this.platform.CustomServices[accessory.context.device.CustomService]);
-    } else {
-      this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    if (this.config.auto_update_interval >= 100) {
+      this.refreshData = this.refreshData.bind(this);
+      setInterval(this.refreshData, this.config.auto_update_interval);
     }
-
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
-
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
-
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this)); // GET - bind to the `getOn` method below
-
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .onSet(this.setBrightness.bind(this)); // SET - bind to the `setBrightness` method below
-    */
-
-    setInterval(() => {
-      this.getOn()
-        .then(isOn => {
-          this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn);
-        });
-    }, this.config.auto_update_interval);
   }
 
   async wake(): Promise<boolean> {
@@ -243,6 +216,35 @@ export class PhilipsTVAccessory {
     } catch (error) {
       this.platform.log.debug('WOL failed: %s', error);
       throw error;
+    }
+  }
+
+  async refreshData() {
+    this.platform.log.debug('Performing scheduled auto-refresh.');
+
+    try {
+      await this.getOn()
+        .then(isOn => {
+          this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn);
+        });
+    } catch (e) {
+      this.platform.log.debug('Cannot update activity status. Error: %s', e);
+    }
+
+    try {
+      const systemUrl = this.config.api_url + 'system';
+      await this.httpClient.fetch(systemUrl)
+        .then(data => {
+          const resp = data as Record<string, Record<string, number>>;
+          const apiVersion = resp.api_version;
+          return apiVersion.Major + '.' + apiVersion.Minor + '.' + apiVersion.Patch;
+        })
+        .then(version => {
+          this.accessory.getService(this.platform.Service.AccessoryInformation)!
+            .setCharacteristic(this.platform.Characteristic.FirmwareRevision, version || '0.0.0');
+        });
+    } catch (e) {
+      this.platform.log.debug('Cannot update system info. Error: %s', e);
     }
   }
 

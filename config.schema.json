@@ -7,21 +7,33 @@
     "type": "object",
     "properties": {
       "tvs": {
+        "description": "TV config. You can configure multiple TVs if you own more than one.",
         "type": "array",
         "items": {
           "type": "object",
           "properties": {
             "name": {
               "title": "Philips TV Name",
+              "description": "A unique custom name of your TV, eg. \"Living Room TV\"",
               "type": "string",
               "required": true,
               "default": "Philips TV"
             },
             "api_url": {
               "title": "API URL",
+              "description": "Full API URL, with protocol, address, port and API version.",
               "type": "string",
               "required": true,
-              "default": "https://192.168.1.54:1926/6/"
+              "pattern": "^http(s):\\/\\/[0-9a-zA-Z.:]+\\/[0-9]+\\/$",
+              "placeholder": "eg. https://192.168.1.54:1926/6/"
+            },
+            "wol_mac": {
+              "title": "MAC address of TV's WLAN",
+              "description": "MAC address used only if you want to use Wake On LAN (or WoWLAN).",
+              "type": "string",
+              "required": false,
+              "pattern": "^([A-F0-9]{2}:){5}[A-F0-9]{2}$",
+              "placeholder": "eg. F0:A3:B2:D8:BE:7B"
             },
             "api_auth": {
               "title": "API Authentication",
@@ -32,13 +44,54 @@
                   "title": "API Username",
                   "type": "string",
                   "required": true,
-                  "default": "5l6n66UK7PYBVKAU"
+                  "placeholder": "eg. 5l6n66UK7PYBVKAU"
                 },
                 "password": {
                   "title": "API Password",
                   "type": "string",
                   "required": true,
-                  "default": "de8d0d1911a6d3662540114e1b3a5f29a473cc413bf6b38afb97820facdcb1fb"
+                  "placeholder": "eg. de8d0d1911a6d3662540114e1b3a5f29a473cc413bf6b38afb97820facdcb1fb"
+                }
+              }
+            },
+            "api_timeout": {
+              "title": "Timeout of API requests (ms)",
+              "description": "Maximum time to wait for the TV to respond (in milliseconds)",
+              "type": "integer",
+              "minimum": 100,
+              "required": false,
+              "default": "3000"
+            },
+            "auto_update_interval": {
+              "title": "Auto-update interval (ms)",
+              "description": "How often to refresh TV state (in milliseconds). A background task checks the TV state and this interval tells it how often to check it.",
+              "type": "integer",
+              "minimum": -1,
+              "required": false,
+              "default": "10000"
+            },
+            "metadata": {
+              "title": "TV metadata",
+              "description": "Metadata shown in device details, optional.",
+              "type": "object",
+              "required": false,
+              "properties": {
+                "model": {
+                  "title": "TV Model",
+                  "type": "string",
+                  "required": false,
+                  "placeholder": "eg. 55OLED705/12"
+                },
+                "manufacturer": {
+                  "title": "TV Manufacturer",
+                  "type": "string",
+                  "required": false,
+                  "default": "Philips"
+                },
+                "serialNumber": {
+                  "title": "TV Serial Number",
+                  "type": "string",
+                  "required": false
                 }
               }
             }
