@@ -46,6 +46,7 @@
   "dependencies": {
     "homebridge-lib": "^7.1.0",
     "request": "^2.88.2",
-    "wake_on_lan": "^1.0.0"
+    "wake_on_lan": "^1.0.0",
+    "wakeonlan": "^0.1.0"
   }
 }

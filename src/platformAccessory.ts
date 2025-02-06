@@ -3,7 +3,7 @@ import { Categories, type CharacteristicValue, type Logger, type PlatformAccesso
 import type { PhilipsTV2020Platform } from './platform.js';
 
 import request, { OptionsWithUrl } from 'request';
-import wol from 'wake_on_lan';
+import wol from 'wakeonlan';
 
 class PhilipsApiAuth {
   constructor(
@@ -14,10 +14,12 @@ class PhilipsApiAuth {
 
 class PhilipsTVConfig {
   constructor(
+    readonly name: string | undefined,
     readonly api_url: string,
     readonly wol_mac: string | undefined,
     readonly api_auth: PhilipsApiAuth | undefined,
     readonly api_timeout: number = 3_000, // I've tested and there is no need to wait longer than 3s, longer than 3s means the TV is OFF
+    readonly auto_update_interval: number = 10_000,
   ) { }
 }
 
@@ -70,9 +72,75 @@ class HttpClient {
           }
         });
       } catch (e) {
+        this.log.debug('[%s %s] Error %s', e);
         fail(e);
       }
     });
+  }
+}
+
+type AsyncSupplier<T> = () => Promise<T>;
+
+class StateCache<T> {
+  private state?: T;
+  private lastCheck = new Date('2000-01-02');
+  private pendingUpdates = 0;
+
+  constructor(
+    private readonly cacheTime: number = 5_000,
+  ) {
+    this.update = this.update.bind(this);
+    this.getIfNotExpired = this.getIfNotExpired.bind(this);
+    this.lockForUpdate = this.lockForUpdate.bind(this);
+    this.release = this.release.bind(this);
+    this.getOrUpdate = this.getOrUpdate.bind(this);
+  }
+
+  update(newState: T) {
+    this.state = newState;
+    this.lastCheck = new Date();
+  }
+
+  private lockForUpdate(): number {
+    const pending = this.pendingUpdates;
+    this.pendingUpdates += 1;
+    // There MAY be race condition but whatever, it's just smart home.
+    // If, for some reason, we allow for two simultaneous updates, then screw it, it's not gonna break anything.
+    return pending;
+  }
+
+  private release() {
+    this.pendingUpdates -= 1;
+  }
+
+  async getOrUpdate(supplier: AsyncSupplier<T>, defaultValue: T): Promise<T> {
+    const placeInQueue = this.lockForUpdate();
+
+    const value = this.getIfNotExpired();
+    if (value) {
+      this.release();
+      return value;
+    }
+    if (placeInQueue > 0) {
+      this.release();
+      return this.state || defaultValue;
+    }
+
+    try {
+      const newValue = await supplier();
+      this.update(newValue);
+      return newValue;
+    } finally {
+      this.release();
+    }
+  }
+
+  getIfNotExpired(): T | undefined {
+    if ((this.lastCheck.getTime() - new Date().getTime()) < this.cacheTime) {
+      return this.state || undefined;
+    } else {
+      return undefined;
+    }
   }
 }
 
@@ -88,13 +156,8 @@ export class PhilipsTVAccessory {
 
   private httpClient: HttpClient;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
+  private state = {
+    on: new StateCache<boolean>(),
   };
 
   constructor(
@@ -102,9 +165,8 @@ export class PhilipsTVAccessory {
     private readonly accessory: PlatformAccessory,
     private readonly config: PhilipsTVConfig,
   ) {
-
     this.httpClient = new HttpClient(config, platform.log);
-  
+
     this.wake = this.wake.bind(this);
 
     this.service = this.accessory.getService(this.platform.Service.Television) || this.accessory.addService(this.platform.Service.Television);
@@ -114,9 +176,11 @@ export class PhilipsTVAccessory {
       .onSet(this.setOn.bind(this))
       .onGet(this.getOn.bind(this));
 
-    this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker) 
+    this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker)
       || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
-    
+
+
+    this.service.setCharacteristic(this.platform.Characteristic.Name, this.config.name || 'Philips TV');
 
     /*
     // set accessory information
@@ -152,134 +216,71 @@ export class PhilipsTVAccessory {
     // register handlers for the Brightness Characteristic
     this.service.getCharacteristic(this.platform.Characteristic.Brightness)
       .onSet(this.setBrightness.bind(this)); // SET - bind to the `setBrightness` method below
-
-    /**
-     * Creating multiple services of the same type.
-     *
-     * To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-     * when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-     * this.accessory.getService('NAME') || this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE_ID');
-     *
-     * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
-     * can use the same subtype id.)
-     * /
-
-    // Example: add two "motion sensor" services to the accessory
-    const motionSensorOneService = this.accessory.getService('Motion Sensor One Name')
-      || this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor One Name', 'YourUniqueIdentifier-1');
-
-    const motionSensorTwoService = this.accessory.getService('Motion Sensor Two Name')
-      || this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor Two Name', 'YourUniqueIdentifier-2');
-
-    /**
-     * Updating characteristics values asynchronously.
-     *
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     *
-     * /
-    let motionDetected = false;
-    setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      motionDetected = !motionDetected;
-
-      // push the new value to HomeKit
-      motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
-
-      this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
     */
+
+    setInterval(() => {
+      this.getOn()
+        .then(isOn => {
+          this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn);
+        });
+    }, this.config.auto_update_interval);
   }
 
-  wake(): Promise<boolean> {
+  async wake(): Promise<boolean> {
     const mac = this.config.wol_mac;
     if (!mac) {
-      return new Promise((success, _) => {
+      return new Promise(resolve => {
         this.platform.log.debug('WOL not configured');
-        success(false);
+        resolve(false);
       });
     }
-    return new Promise((success, failure) => {
-      wol.wake(mac, error => {
-        if (error) {
-          this.platform.log.debug('WOL failed: %s', error);
-          failure(error);
-        } else {
-          this.platform.log.debug('WOL successful!');
-          success(true);
-        }
-      });
-    });
+
+    this.platform.log.debug('Waking up TV with MAC %s', mac);
+    try {
+      await wol(mac);
+      this.platform.log.debug('WOL successful!');
+      return true;
+    } catch (error) {
+      this.platform.log.debug('WOL failed: %s', error);
+      throw error;
+    }
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setOn(value: CharacteristicValue) {
+  async setOn(newState: CharacteristicValue) {
     const url = this.config.api_url + 'powerstate';
 
-    await this.getOn()
-      .then(isOn => {
-        if (isOn && !value) {
-          this.platform.log.debug('TV is ON, turning off...');
-          return this.httpClient.fetch(url, 'POST', {
-            'powerstate': 'Standby',
-          });
-        } else if (!isOn && value) {
-          this.platform.log.debug('TV is OFF, waking up...');
-          return this.wake().then(_ => this.httpClient.fetch(url, 'POST', {
-            'powerstate': 'On',
-          }));
-        } else {
-          this.platform.log.debug('Is TV on? %s. Should be on? %s. Nothing to do.', isOn, value);
-        }
+    const isOn = await this.getOn();
+    if (isOn && !newState) {
+      this.platform.log.debug('TV is ON, turning off...');
+      await this.httpClient.fetch(url, 'POST', {
+        'powerstate': 'Standby',
       });
+      this.state.on.update(false);
+    } else if (!isOn && newState) {
+      this.platform.log.debug('TV is OFF, waking up...');
+      await this.wake().then(() => this.httpClient.fetch(url, 'POST', {
+        'powerstate': 'On',
+      }));
+      this.state.on.update(true);
+    } else {
+      this.platform.log.debug('Is TV on? %s. Should be on? %s. Nothing to do.', isOn, newState);
+    }
   }
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possible. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-   * In this case, you may decide not to implement `onGet` handlers, which may speed up
-   * the responsiveness of your device in the Home app.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
   async getOn(): Promise<CharacteristicValue> {
     const url = this.config.api_url + 'powerstate';
 
-    return this.httpClient.fetch(url)
-      .then(data => {
-        const resp = data as Record<string, string>;
-        return resp.powerstate === 'On';
-      })
-      .catch(e => {
-        this.platform.log('Cannot fetch TV power status, is it off?');
-        this.platform.log.debug('Error fetching TV status: %s', e);
-        return false;
-      });
-  }
-
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  async setBrightness(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
-
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
+    return await this.state.on.getOrUpdate(() =>
+      this.httpClient.fetch(url)
+        .then(data => {
+          const resp = data as Record<string, string>;
+          return resp.powerstate === 'On';
+        }).catch(e => {
+          this.platform.log('Cannot fetch TV power status, is it off?');
+          this.platform.log.debug('Error fetching TV status: %s', e);
+          return false;
+        }), false,
+    );
   }
 }
 
