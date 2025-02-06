@@ -153,6 +153,12 @@ class StateCache<T> {
   }
 }
 
+class VolumeState {
+  min: number = 0;
+  max: number = 60;
+  current: number = 3;
+  muted: boolean = false;
+}
 
 /**
  * Philips TV accessory
@@ -165,6 +171,7 @@ export class PhilipsTVAccessory {
 
   private state = {
     on: new StateCache<boolean>(),
+    volume: new StateCache<VolumeState>(),
   };
 
   constructor(
@@ -183,15 +190,26 @@ export class PhilipsTVAccessory {
       .onSet(this.setOn.bind(this))
       .onGet(this.getOn.bind(this));
 
-    this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker)
-      || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
-
     const metadata = this.config.metadata;
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Name, config.name || 'Philips TV')
       .setCharacteristic(this.platform.Characteristic.Manufacturer, metadata?.manufacturer || 'Philips')
       .setCharacteristic(this.platform.Characteristic.Model, metadata?.model || 'Default-Model')
       .setCharacteristic(this.platform.Characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
+
+    this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker)
+    || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
+
+    this.speakerService.getCharacteristic(this.platform.Characteristic.Mute)
+      .onSet(this.setMute.bind(this))
+      .onGet(this.getMute.bind(this));
+
+    this.speakerService.addCharacteristic(this.platform.Characteristic.Volume)
+      .onSet(this.setVolume.bind(this))
+      .onGet(this.getVolume.bind(this));
+
+    this.speakerService.getCharacteristic(this.platform.Characteristic.VolumeSelector)
+      .onSet(this.changeVolume.bind(this));
 
     if (this.config.auto_update_interval >= 100) {
       this.refreshData = this.refreshData.bind(this);
@@ -232,6 +250,12 @@ export class PhilipsTVAccessory {
     }
 
     try {
+      await this.getVolumeState(); // this has updates inside
+    } catch (e) {
+      this.platform.log.debug('Cannot update volume info. Error: %s', e);
+    }
+
+    try {
       const systemUrl = this.config.api_url + 'system';
       await this.httpClient.fetch(systemUrl)
         .then(data => {
@@ -246,6 +270,22 @@ export class PhilipsTVAccessory {
     } catch (e) {
       this.platform.log.debug('Cannot update system info. Error: %s', e);
     }
+  }
+
+  async getOn(): Promise<CharacteristicValue> {
+    const url = this.config.api_url + 'powerstate';
+
+    return await this.state.on.getOrUpdate(() =>
+      this.httpClient.fetch(url)
+        .then(data => {
+          const resp = data as Record<string, string>;
+          return resp.powerstate === 'On';
+        }).catch(e => {
+          this.platform.log('Cannot fetch TV power status, is it off?');
+          this.platform.log.debug('Error fetching TV status: %s', e);
+          return false;
+        }), false,
+    );
   }
 
   async setOn(newState: CharacteristicValue) {
@@ -269,20 +309,80 @@ export class PhilipsTVAccessory {
     }
   }
 
-  async getOn(): Promise<CharacteristicValue> {
-    const url = this.config.api_url + 'powerstate';
+  async getMute(): Promise<CharacteristicValue> {
+    return await this.state.volume.getOrUpdate(() => 
+      this.getVolumeState(), new VolumeState(),
+    ).then(data => data.muted);
+  }
 
-    return await this.state.on.getOrUpdate(() =>
-      this.httpClient.fetch(url)
-        .then(data => {
-          const resp = data as Record<string, string>;
-          return resp.powerstate === 'On';
-        }).catch(e => {
-          this.platform.log('Cannot fetch TV power status, is it off?');
-          this.platform.log.debug('Error fetching TV status: %s', e);
-          return false;
-        }), false,
-    );
+  async setMute(newState: CharacteristicValue) {
+    const isMuted = await this.getMute();
+    const url = this.config.api_url + 'audio/volume';
+
+    if (isMuted !== newState) {
+      const volume = this.state.volume.getIfNotExpired() || new VolumeState();
+      volume.muted = newState as boolean;
+
+      await this.httpClient.fetch(url, 'POST', volume);
+      this.state.volume.update(volume);
+    }
+  }
+
+  async getVolume(): Promise<CharacteristicValue> {
+    return await this.state.volume.getOrUpdate(() => 
+      this.getVolumeState(), new VolumeState(),
+    ).then(this.calculateCurrentVolume);
+  }
+
+  async setVolume(newVolume: CharacteristicValue) {
+    await this.getVolume(); // refresh state if needed
+    const url = this.config.api_url + 'audio/volume';
+
+    let volume = this.state.volume.getIfNotExpired() || new VolumeState();
+    volume = this.updateVolume(volume, newVolume as number);
+
+    await this.httpClient.fetch(url, 'POST', volume);
+    this.state.volume.update(volume);
+  }
+
+  async changeVolume(down: CharacteristicValue) {
+    const volume = await this.getVolumeState();
+    const url = this.config.api_url + 'audio/volume';
+
+    if (!down && volume.current < volume.max) {
+      volume.current = volume.current + 1;
+    } else if (down && volume.current > volume.min) {
+      volume.current = volume.current - 1;
+    }
+    
+    await this.httpClient.fetch(url, 'POST', volume);
+    this.state.volume.update(volume);
+    this.speakerService.updateCharacteristic(this.platform.Characteristic.Volume, this.calculateCurrentVolume(volume));
+  }
+
+  async getVolumeState(): Promise<VolumeState> {
+    const url = this.config.api_url + 'audio/volume';
+
+    return await this.state.volume.getOrUpdate(() => 
+      this.httpClient.fetch<VolumeState>(url), new VolumeState(),
+    ).then(volume => {
+      this.speakerService.updateCharacteristic(this.platform.Characteristic.Mute, volume.muted);
+      this.speakerService.updateCharacteristic(this.platform.Characteristic.Volume, this.calculateCurrentVolume(volume));
+      return volume;
+    });
+  }
+
+  private calculateCurrentVolume(data: VolumeState): number {
+    let maxRange = data.max - data.min;
+    if (maxRange <= 0) {
+      maxRange = 1;
+    }
+    return Math.floor((1.0 * (data.current - data.min) / maxRange) * 100);
+  };
+
+  private updateVolume(data: VolumeState, value: number) {
+    data.current = Math.round(data.min + (data.max - data.min) * (value / 100.0));
+    return data;
   }
 }
 
