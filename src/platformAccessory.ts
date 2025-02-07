@@ -1,42 +1,35 @@
 import { Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
 import { HttpClient, WOLCaster } from './protocol.js';
-import { Refreshable, TVService, TVSpeakerService } from './services.js';
+import { Refreshable, TVScreenService, TVService, TVSpeakerService } from './services.js';
 import { Log } from './logger.js';
 
-class PhilipsApiAuth {
-  constructor(
-    readonly username: string,
-    readonly password: string,
-  ) { }
+interface PhilipsTVConfig {
+  name?: string;
+  api_url: string;
+  wol_mac?: string,
+  wake_up_delay?: number,
+  api_auth?: PhilipsApiAuth,
+  api_timeout?: number,
+  auto_update_interval?: number,
+  metadata?: PhilipsTVMetadata,
 }
 
-class PhilipsTVMetadata {
-  constructor(
-    readonly model: string = 'Generic TV',
-    readonly manufacturer: string = 'Philips',
-    readonly serialNumber: string | undefined,
-  ) { }
+interface PhilipsApiAuth {
+  username: string;
+  password: string;
 }
 
-class PhilipsTVConfig {
-  constructor(
-    readonly name: string | undefined,
-    readonly api_url: string,
-    readonly wol_mac: string | undefined,
-    readonly api_auth: PhilipsApiAuth | undefined,
-    readonly api_timeout: number = 3_000, // I've tested and there is no need to wait longer than 3s, longer than 3s means the TV is OFF
-    readonly auto_update_interval: number = 10_000,
-    readonly metadata: PhilipsTVMetadata | undefined,
-  ) { }
+interface PhilipsTVMetadata {
+  model?: string;
+  manufacturer?: string;
+  serialNumber?: string;
 }
 
 /**
  * Philips TV accessory
  */
 export class PhilipsTVAccessory {
-  private tvService: TVService;
-  private speakerService: TVSpeakerService;
   private refreshables: Refreshable[] = [];
 
   private log: Log;
@@ -52,28 +45,34 @@ export class PhilipsTVAccessory {
     config: PhilipsTVConfig,
   ) {
     this.log = new Log(logger, config.name || 'null');
+    this.log.debug('Using config: %s', config);
     this.httpClient = new HttpClient(config, this.log);
-    this.wolCaster = new WOLCaster(this.log, config.wol_mac);
+    this.wolCaster = new WOLCaster(this.log, config.wol_mac, config.wake_up_delay);
 
     this.accessory.category = Categories.TELEVISION;
 
-    this.tvService = new TVService(accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType);
-    this.refreshables.push(this.tvService);
+    const tvService = new TVService(accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType);
+    this.refreshables.push(tvService);
 
-    this.speakerService = new TVSpeakerService(accessory, this.log, this.httpClient, characteristic, serviceType);
-    this.refreshables.push(this.speakerService);
+    const speakerService = new TVSpeakerService(accessory, this.log, this.httpClient, characteristic, serviceType);
+    this.refreshables.push(speakerService);
+
+    const tvScreen = new TVScreenService(accessory, this.log, this.httpClient, characteristic, serviceType);
+    tvService.subscribe(tvScreen);
+    this.refreshables.push(tvScreen);
 
     const metadata = config.metadata;
     this.accessory.getService(serviceType.AccessoryInformation)!
       .setCharacteristic(characteristic.Name, config.name || 'Philips TV')
       .setCharacteristic(characteristic.Manufacturer, metadata?.manufacturer || 'Philips')
-      .setCharacteristic(characteristic.Model, metadata?.model || 'Default-Model')
+      .setCharacteristic(characteristic.Model, metadata?.model || 'Generic TV')
       .setCharacteristic(characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
 
     this.refreshData = this.refreshData.bind(this);
     this.refreshData();
-    if (config.auto_update_interval >= 100) {
-      setInterval(this.refreshData, config.auto_update_interval);
+    const update_interval = config.auto_update_interval || 0;
+    if (update_interval >= 100) {
+      setInterval(this.refreshData, update_interval);
     }
   }
 
@@ -81,7 +80,7 @@ export class PhilipsTVAccessory {
     this.log.debug('Performing scheduled auto-refresh.');
     for (const refreshable of this.refreshables) {
       try {
-        refreshable.refreshData();
+        await refreshable.refreshData();
       } catch (e) {
         this.log.warn('Error refreshing data about the TV: %s', e);
       }

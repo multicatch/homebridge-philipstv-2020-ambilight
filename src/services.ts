@@ -11,9 +11,32 @@ export interface Refreshable {
     refreshData(): Promise<void>;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise(res => setTimeout(res, ms));
-} 
+export interface WantsToBeNotifiedAboutUpdates {
+    notify(): void;
+}
+
+export class NotifiesOthersAboutUpdates {
+  private others: WantsToBeNotifiedAboutUpdates[] = [];
+
+  constructor(protected readonly log: Log) {
+  }
+
+  subscribe<T extends WantsToBeNotifiedAboutUpdates>(other: T) {
+    this.others.push(other);
+  }
+
+  notifyOthers() {
+    setTimeout(() => {
+      try {
+        for (const other of this.others) {
+          other.notify();
+        }
+      } catch (e) {
+        this.log.warn('Notification about update failed: %s', e);
+      }
+    }, 100);
+  }
+}
 
 /** 
  * 
@@ -23,19 +46,20 @@ function delay(ms: number): Promise<void> {
 const POWER_API = 'powerstate';
 const KEY_API = 'input/key';
 
-export class TVService implements Refreshable {
+export class TVService extends NotifiesOthersAboutUpdates implements Refreshable {
   private service: Service;
 
   private onState = new StateCache<boolean>();
 
   constructor(
         private readonly accessory: PlatformAccessory,
-        private readonly log: Log,
+        log: Log,
         private readonly httpClient: HttpClient,
         private readonly wolCaster: WOLCaster,
         private readonly characteristic: typeof Characteristic,
         serviceType: typeof Service,
   ) {
+    super(log);
     this.service = this.accessory.getService(serviceType.Television) || this.accessory.addService(serviceType.Television);
 
     this.service.getCharacteristic(characteristic.Active)
@@ -75,20 +99,26 @@ export class TVService implements Refreshable {
     const isOn = await this.getOn();
 
     if (isOn && !newState) {
+      this.onState.update(false);
       this.log.debug('TV is ON, turning off...');
       await this.httpClient.fetchAPI(POWER_API, 'POST', {
         'powerstate': 'Standby',
+      }).then(() => {
+        this.onState.update(false);
+        this.notifyOthers();
       });
-      this.onState.update(false);
 
     } else if (!isOn && newState) {
+      this.onState.update(true);
       this.log.debug('TV is OFF, waking up...');
-      await this.wolCaster.wake()
-        .then(() => delay(100))
+      await this.wolCaster.wakeAndWarmUp()
         .then(() => this.httpClient.fetchAPI(POWER_API, 'POST', {
           'powerstate': 'On',
-        }));
-      this.onState.update(true);
+        }))
+        .then(() => {
+          this.onState.update(true);
+          this.notifyOthers();
+        });
 
     } else {
       this.log.debug('Is TV on? %s. Should be on? %s. Nothing to do.', isOn, newState);
@@ -166,7 +196,7 @@ class VolumeState {
   muted: boolean = false;
 }
 
-export class TVSpeakerService implements Refreshable {
+export class TVSpeakerService implements Refreshable, WantsToBeNotifiedAboutUpdates {
   private speakerService: Service;
 
   private volumeState = new StateCache<VolumeState>();
@@ -191,6 +221,10 @@ export class TVSpeakerService implements Refreshable {
 
     this.speakerService.getCharacteristic(characteristic.VolumeSelector)
       .onSet(this.changeVolume.bind(this));
+  }
+
+  notify(): void {
+    this.volumeState.invalidate();
   }
 
   async refreshData() {
@@ -270,5 +304,74 @@ export class TVSpeakerService implements Refreshable {
   private updateVolume(data: VolumeState, value: number) {
     data.current = Math.round(data.min + (data.max - data.min) * (value / 100.0));
     return data;
+  }
+}
+
+
+/**
+ * 
+ * TV Screen On/Off Switch
+ * 
+ */
+const SCREEN_API = 'screenstate';
+
+export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdates {
+  private service: Service;
+  private onState = new StateCache<boolean>();
+
+  constructor(
+    accessory: PlatformAccessory,
+    private readonly log: Log,
+    private readonly httpClient: HttpClient,
+    private readonly characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+  ) {
+    this.service = accessory.addService(serviceType.Switch, 'TV Screen', 'tvscreen');
+    this.service.setCharacteristic(characteristic.Name, 'Screen');
+    this.service.getCharacteristic(characteristic.On)
+      .onGet(this.getOn.bind(this))
+      .onSet(this.setOn.bind(this));
+  }
+
+  notify(): void {
+    this.onState.invalidate();
+    this.refreshData();
+  }
+
+  async refreshData() {
+    try {
+      const isOn = await this.getOn();
+      this.service.updateCharacteristic(this.characteristic.On, isOn);
+    } catch (e) {
+      this.log.debug('Cannot fetch screen state, the screen is probably OFF. Error: %s', e);
+    }
+  }
+
+  async getOn(): Promise<CharacteristicValue> {
+    return await this.onState.getOrUpdate(() =>
+      this.httpClient.fetchAPI(SCREEN_API)
+        .then(data => {
+          const resp = data as Record<string, string>;
+          return resp.screenstate === 'On';
+        }).catch(e => {
+          this.log.info('Cannot fetch TV screen status, is it off?');
+          this.log.debug('Error fetching TV screen status: %s', e);
+          return false;
+        }), false,
+    );
+  }
+
+  async setOn(newState: CharacteristicValue) {
+    const isOn = await this.getOn();
+    const shouldBeOn = newState as boolean;
+
+    if (isOn !== shouldBeOn) {
+      this.log.debug('TV is ON, turning off...');
+      this.onState.update(shouldBeOn);
+      await this.httpClient.fetchAPI(SCREEN_API, 'POST', {
+        'screenstate': shouldBeOn ? 'On' : 'Off',
+      });
+      this.onState.update(shouldBeOn);
+    }
   }
 }

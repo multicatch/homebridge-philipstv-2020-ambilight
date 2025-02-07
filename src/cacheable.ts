@@ -32,6 +32,10 @@ export class StateCache<T> {
     this.pendingUpdates -= 1;
   }
 
+  invalidate() {
+    this.lastCheck = new Date('2000-01-02');
+  }
+
   async getOrUpdate(supplier: AsyncSupplier<T>, defaultValue: T): Promise<T> {
     const placeInQueue = this.lockForUpdate();
 
@@ -55,7 +59,7 @@ export class StateCache<T> {
   }
 
   getIfNotExpired(): T | undefined {
-    if ((this.lastCheck.getTime() - new Date().getTime()) < this.cacheTime) {
+    if ((new Date().getTime() - this.lastCheck.getTime()) < this.cacheTime) {
       return this.state || undefined;
     } else {
       return undefined;

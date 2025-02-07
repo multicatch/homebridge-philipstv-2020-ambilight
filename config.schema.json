@@ -35,6 +35,14 @@
               "pattern": "^([A-F0-9]{2}:){5}[A-F0-9]{2}$",
               "placeholder": "eg. F0:A3:B2:D8:BE:7B"
             },
+            "wake_up_delay": {
+              "title": "Wake up delay after WOL (ms)",
+              "description": "After WoL/WoWLAN, the TV needs a while to warm up before it can be turned on. This delay tells us how long to wait for the warm up.",
+              "type": "integer",
+              "required": false,
+              "minimum": 100,
+              "default": "4000"
+            },
             "api_auth": {
               "title": "API Authentication",
               "type": "object",
