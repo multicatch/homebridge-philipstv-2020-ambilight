@@ -58,11 +58,12 @@ export class PhilipsTVAccessory {
     this.refreshables.push(speakerService);
 
     const tvScreen = new TVScreenService(accessory, this.log, this.httpClient, characteristic, serviceType);
-    tvService.subscribe(tvScreen);
+    tvService.addDependant(tvScreen);
     this.refreshables.push(tvScreen);
 
     const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType);
-    tvService.subscribe(ambilight);
+    tvService.addDependant(ambilight);
+    tvScreen.addDependant(ambilight);
     this.refreshables.push(ambilight);
 
     const metadata = config.metadata;

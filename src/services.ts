@@ -11,30 +11,35 @@ export interface Refreshable {
     refreshData(): Promise<void>;
 }
 
-export interface WantsToBeNotifiedAboutUpdates {
-    notify(): void;
-}
+export abstract class PlatformService implements Refreshable {
+  private others: PlatformService[] = [];
 
-export class NotifiesOthersAboutUpdates {
-  private others: WantsToBeNotifiedAboutUpdates[] = [];
-
-  constructor(protected readonly log: Log) {
+  constructor(
+    protected readonly log: Log,
+    private readonly refreshTimeout: number = 500,
+  ) {
   }
 
-  subscribe<T extends WantsToBeNotifiedAboutUpdates>(other: T) {
+  abstract refreshData(): Promise<void>;
+
+  async forceRefresh() {
+    await this.refreshData();
+  }
+
+  addDependant<T extends PlatformService>(other: T) {
     this.others.push(other);
   }
 
-  notifyOthers() {
+  refreshDependants() {
     setTimeout(() => {
       try {
         for (const other of this.others) {
-          other.notify();
+          other.forceRefresh();
         }
       } catch (e) {
         this.log.warn('Notification about update failed: %s', e);
       }
-    }, 100);
+    }, this.refreshTimeout);
   }
 }
 
@@ -46,7 +51,7 @@ export class NotifiesOthersAboutUpdates {
 const POWER_API = 'powerstate';
 const KEY_API = 'input/key';
 
-export class TVService extends NotifiesOthersAboutUpdates implements Refreshable {
+export class TVService extends PlatformService {
   private service: Service;
 
   private onState = new StateCache<boolean>();
@@ -59,7 +64,7 @@ export class TVService extends NotifiesOthersAboutUpdates implements Refreshable
         private readonly characteristic: typeof Characteristic,
         serviceType: typeof Service,
   ) {
-    super(log);
+    super(log, 1500);
     this.service = this.accessory.getService(serviceType.Television) || this.accessory.addService(serviceType.Television);
 
     this.service.getCharacteristic(characteristic.Active)
@@ -105,7 +110,7 @@ export class TVService extends NotifiesOthersAboutUpdates implements Refreshable
         'powerstate': 'Standby',
       }).then(() => {
         this.onState.update(false);
-        this.notifyOthers();
+        this.refreshDependants();
       });
 
     } else if (!isOn && newState) {
@@ -117,7 +122,7 @@ export class TVService extends NotifiesOthersAboutUpdates implements Refreshable
         }))
         .then(() => {
           this.onState.update(true);
-          this.notifyOthers();
+          this.refreshDependants();
         });
 
     } else {
@@ -196,18 +201,20 @@ class VolumeState {
   muted: boolean = false;
 }
 
-export class TVSpeakerService implements Refreshable, WantsToBeNotifiedAboutUpdates {
+export class TVSpeakerService extends PlatformService {
   private speakerService: Service;
 
   private volumeState = new StateCache<VolumeState>();
 
   constructor(
     private readonly accessory: PlatformAccessory,
-    private readonly log: Log,
+    log: Log,
     private readonly httpClient: HttpClient,
     private readonly characteristic: typeof Characteristic,
     serviceType: typeof Service,
   ) {
+    super(log);
+
     this.speakerService = this.accessory.getService(serviceType.TelevisionSpeaker)
       || this.accessory.addService(serviceType.TelevisionSpeaker);
 
@@ -223,8 +230,9 @@ export class TVSpeakerService implements Refreshable, WantsToBeNotifiedAboutUpda
       .onSet(this.changeVolume.bind(this));
   }
 
-  notify(): void {
+  async forceRefresh() {
     this.volumeState.invalidate();
+    await this.refreshData();
   }
 
   async refreshData() {
@@ -250,6 +258,8 @@ export class TVSpeakerService implements Refreshable, WantsToBeNotifiedAboutUpda
 
       await this.httpClient.fetchAPI(VOLUME_API, 'POST', volume);
       this.volumeState.update(volume);
+
+      this.refreshDependants();
     }
   }
 
@@ -280,6 +290,7 @@ export class TVSpeakerService implements Refreshable, WantsToBeNotifiedAboutUpda
 
     await this.httpClient.fetchAPI(VOLUME_API, 'POST', volume);
     this.volumeState.update(volume);
+    this.refreshDependants();
     this.speakerService.updateCharacteristic(this.characteristic.Volume, this.calculateCurrentVolume(volume));
   }
 
@@ -315,17 +326,19 @@ export class TVSpeakerService implements Refreshable, WantsToBeNotifiedAboutUpda
  */
 const SCREEN_API = 'screenstate';
 
-export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdates {
+export class TVScreenService extends PlatformService {
   private service: Service;
   private onState = new StateCache<boolean>();
 
   constructor(
     accessory: PlatformAccessory,
-    private readonly log: Log,
+    log: Log,
     private readonly httpClient: HttpClient,
     private readonly characteristic: typeof Characteristic,
     serviceType: typeof Service,
   ) {
+    super(log);
+
     this.service = accessory.addService(serviceType.Switch, 'TV Screen', 'tvscreen');
     this.service.setCharacteristic(characteristic.Name, 'Screen');
     this.service.getCharacteristic(characteristic.On)
@@ -333,9 +346,9 @@ export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdat
       .onSet(this.setOn.bind(this));
   }
 
-  notify(): void {
+  async forceRefresh() {
     this.onState.invalidate();
-    this.refreshData();
+    await this.refreshData();
   }
 
   async refreshData() {
@@ -371,6 +384,7 @@ export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdat
         'screenstate': shouldBeOn ? 'On' : 'Off',
       });
       this.onState.update(shouldBeOn);
+      this.refreshDependants();
     }
   }
 }
@@ -383,6 +397,7 @@ export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdat
  */
 const AMBILIGHT_POWER_API = 'ambilight/power';
 const AMBILIGHT_CONFIG_API = 'ambilight/currentconfiguration';
+const AMBILIGHT_LOUNGE_LIGHT = 'Lounge light';
 const AMBILIGHT_OFF_STYLE_NAME = 'OFF';
 
 class AmbilightCurrentStyle {
@@ -390,23 +405,46 @@ class AmbilightCurrentStyle {
   isExpert: boolean = false;
   menuSetting?: string;
   stringValue?: string;
+  algorithm?: string;
+  colorSettings?: AmbilightColorSettings;
+}
+
+class AmbilightColorSettings {
+  constructor(
+    public readonly color: AmbilightColor,
+    public readonly colorDelta: AmbilightColor = new AmbilightColor(0, 0, 0),
+    public readonly speed: number = 0,
+    public readonly mode?: string,
+  ) {}
+}
+
+class AmbilightColor {
+  constructor(
+    public hue: number, // 0 - 360
+    public saturation: number, // 0 - 100
+    public brightness: number, // 0 - 255
+  ) {}
 }
   
 const AMBILIGHT_OFF_STYLE = new AmbilightCurrentStyle();
 
-export class TVAmbilightService implements Refreshable, WantsToBeNotifiedAboutUpdates {
+export class TVAmbilightService extends PlatformService {
   private service: Service;
   private onState = new StateCache<boolean>();
   private style = new StateCache<AmbilightCurrentStyle>(100);
   private lastStyle: AmbilightCurrentStyle = new AmbilightCurrentStyle();
 
+  private readonly color: AmbilightColor = new AmbilightColor(0, 0, 255);
+
   constructor(
     accessory: PlatformAccessory,
-    private readonly log: Log,
+    log: Log,
     private readonly httpClient: HttpClient,
     private readonly characteristic: typeof Characteristic,
     serviceType: typeof Service,
   ) {
+    super(log, 4000);
+
     this.service = accessory.addService(serviceType.Lightbulb, 'TV Ambilight', 'tvambilight');
     this.service.setCharacteristic(characteristic.Name, 'Ambilight');
     this.service.getCharacteristic(characteristic.On)
@@ -414,16 +452,48 @@ export class TVAmbilightService implements Refreshable, WantsToBeNotifiedAboutUp
       .onSet(this.setOn.bind(this));
   }
 
-  notify(): void {
+  private configureColors() {
+    this.service.getCharacteristic(this.characteristic.Brightness)
+      .onGet(this.getBrightness.bind(this))
+      .onSet(this.setBrightness.bind(this));
+    this.service.getCharacteristic(this.characteristic.Hue)
+      .onGet(this.getHue.bind(this))
+      .onSet(this.setHue.bind(this));
+    this.service.getCharacteristic(this.characteristic.Saturation)
+      .onGet(this.getSaturation.bind(this))
+      .onSet(this.setSaturation.bind(this));
+  }
+
+  private removeColors() {
+    const brightness = this.service.getCharacteristic(this.characteristic.Brightness);
+    if (brightness) {
+      this.service.removeCharacteristic(brightness);
+    }
+    const hue = this.service.getCharacteristic(this.characteristic.Hue);
+    if (hue) {
+      this.service.removeCharacteristic(hue);
+    }
+    const saturation = this.service.getCharacteristic(this.characteristic.Saturation);
+    if (saturation) {
+      this.service.removeCharacteristic(saturation);
+    } 
+  }
+
+  async forceRefresh() {
     this.onState.invalidate();
     this.style.invalidate();
-    this.refreshData();
+    await this.refreshData();
   }
 
   async refreshData() {
     try {
       const isOn = await this.getOn();
       this.service.updateCharacteristic(this.characteristic.On, isOn);
+
+      const color = await this.getCurrentColor();
+      this.service.updateCharacteristic(this.characteristic.Brightness, color.brightness / 255.0 * 100);
+      this.service.updateCharacteristic(this.characteristic.Hue, color.hue);
+      this.service.updateCharacteristic(this.characteristic.Saturation, color.saturation);
     } catch (e) {
       this.log.debug('Cannot fetch screen state, the screen is probably OFF. Error: %s', e);
     }
@@ -458,7 +528,7 @@ export class TVAmbilightService implements Refreshable, WantsToBeNotifiedAboutUp
 
     this.onState.update(shouldBeOn);
     this.log.debug('Setting Ambilight power status to %s', shouldBeOn);
-    
+
     if (shouldBeOn) {
       await this.setCurrentStyle(this.lastStyle);
       await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
@@ -479,16 +549,82 @@ export class TVAmbilightService implements Refreshable, WantsToBeNotifiedAboutUp
   }
 
   async getCurrentStyle(): Promise<AmbilightCurrentStyle> {
-    return await this.style.getOrUpdate(() =>
+    const style = await this.style.getOrUpdate(() =>
       this.httpClient.fetchAPI<AmbilightCurrentStyle>(AMBILIGHT_CONFIG_API).catch(e => {
         this.log.debug('Ambilight style check fail: %s', e);
         this.style.bumpExpiration();
         return this.style.getIfNotExpired() || new AmbilightCurrentStyle();
       }), new AmbilightCurrentStyle(),
     );
+
+    if (style.styleName === AMBILIGHT_LOUNGE_LIGHT) {
+      this.configureColors();
+    } else {
+      this.removeColors();
+    }
+
+    return style;
   }
 
   async setCurrentStyle(currentStyle: AmbilightCurrentStyle) {
+    this.style.update(currentStyle);
     await this.httpClient.fetchAPI(AMBILIGHT_CONFIG_API, 'POST', currentStyle);
+  }
+
+  async getBrightness(): Promise<number> {
+    const currentColor = await this.getCurrentColor();
+    return currentColor.brightness / 255.0 * 100.0;
+  }
+
+  async setBrightness(newBrightness: CharacteristicValue) {
+    const actualBrightness = Math.round((newBrightness as number) / 100.0 * 255.0);
+    const currentColor = await this.getCurrentColor();
+    currentColor.brightness = actualBrightness;
+    await this.setCurrentColor(currentColor);
+  }
+
+  async getHue(): Promise<number> {
+    const currentColor = await this.getCurrentColor();
+    return currentColor.hue;
+  }
+
+  async setHue(newHue: CharacteristicValue) {
+    const actualHue = (newHue as number);
+    const currentColor = await this.getCurrentColor();
+    currentColor.hue = actualHue;
+    await this.setCurrentColor(currentColor);
+  }
+
+  async getSaturation(): Promise<number> {
+    const currentColor = await this.getCurrentColor();
+    return currentColor.saturation;
+  }
+
+  async setSaturation(newSaturation: CharacteristicValue) {
+    const actualHue = (newSaturation as number);
+    const currentColor = await this.getCurrentColor();
+    currentColor.saturation = actualHue;
+    await this.setCurrentColor(currentColor);
+  }
+
+  async getCurrentColor(): Promise<AmbilightColor> {
+    return this.color;
+  }
+
+  async setCurrentColor(color: AmbilightColor) {
+    const style = this.createCustomColor(color);
+    this.lastStyle = style;
+    await this.setCurrentStyle(style);
+    await this.setOn(color.brightness > 0);
+  }
+
+  private createCustomColor(color: AmbilightColor): AmbilightCurrentStyle {
+    const style = new AmbilightCurrentStyle();
+    style.colorSettings = new AmbilightColorSettings(color);
+    style.algorithm = 'MANUAL_HUE';
+    style.styleName = AMBILIGHT_LOUNGE_LIGHT;
+    style.isExpert = true;
+
+    return style;
   }
 }
