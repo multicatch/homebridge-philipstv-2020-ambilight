@@ -4,6 +4,7 @@ import type { PhilipsTV2020Platform } from './platform.js';
 
 import request, { OptionsWithUrl } from 'request';
 import wol from 'wakeonlan';
+import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 
 class PhilipsApiAuth {
   constructor(
@@ -17,7 +18,7 @@ class PhilipsTVMetadata {
     readonly model: string = 'Generic TV',
     readonly manufacturer: string = 'Philips',
     readonly serialNumber: string | undefined,
-  ) {}
+  ) { }
 }
 
 class PhilipsTVConfig {
@@ -190,6 +191,9 @@ export class PhilipsTVAccessory {
       .onSet(this.setOn.bind(this))
       .onGet(this.getOn.bind(this));
 
+    this.service.getCharacteristic(this.platform.Characteristic.RemoteKey)
+      .onSet(this.sendKey.bind(this));
+
     const metadata = this.config.metadata;
     this.accessory.getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Name, config.name || 'Philips TV')
@@ -198,7 +202,7 @@ export class PhilipsTVAccessory {
       .setCharacteristic(this.platform.Characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
 
     this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker)
-    || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
+      || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
 
     this.speakerService.getCharacteristic(this.platform.Characteristic.Mute)
       .onSet(this.setMute.bind(this))
@@ -309,8 +313,63 @@ export class PhilipsTVAccessory {
     }
   }
 
+  async sendKey(keyValue: CharacteristicValue) {
+    let rawKey = '';
+    switch (keyValue) {
+    case RemoteKey.PLAY_PAUSE: {
+      rawKey = 'PlayPause';
+      break;
+    }
+    case RemoteKey.BACK: {
+      rawKey = 'Back';
+      break;
+    }
+    case RemoteKey.ARROW_UP: {
+      rawKey = 'CursorUp';
+      break;
+    }
+    case RemoteKey.ARROW_DOWN: {
+      rawKey = 'CursorDown';
+      break;
+    }
+    case RemoteKey.ARROW_LEFT: {
+      rawKey = 'CursorLeft';
+      break;
+    }
+    case RemoteKey.ARROW_RIGHT: {
+      rawKey = 'CursorRight';
+      break;
+    }
+    case RemoteKey.SELECT: {
+      rawKey = 'Confirm';
+      break;
+    }
+    case RemoteKey.EXIT: {
+      rawKey = 'Exit';
+      break;
+    }
+    case RemoteKey.INFORMATION: {
+      rawKey = 'Info';
+      break;
+    }
+    default: {
+      this.platform.log('Unknown key: %s', keyValue);
+      return;
+    }
+    }
+
+    await this.sendKeyRaw(rawKey);
+  }
+
+  async sendKeyRaw(value: string) {
+    const url = this.config.api_url + 'input/key';
+    await this.httpClient.fetch(url, 'POST', {
+      'key': value,
+    });
+  }
+
   async getMute(): Promise<CharacteristicValue> {
-    return await this.state.volume.getOrUpdate(() => 
+    return await this.state.volume.getOrUpdate(() =>
       this.getVolumeState(), new VolumeState(),
     ).then(data => data.muted);
   }
@@ -329,7 +388,7 @@ export class PhilipsTVAccessory {
   }
 
   async getVolume(): Promise<CharacteristicValue> {
-    return await this.state.volume.getOrUpdate(() => 
+    return await this.state.volume.getOrUpdate(() =>
       this.getVolumeState(), new VolumeState(),
     ).then(this.calculateCurrentVolume);
   }
@@ -354,7 +413,7 @@ export class PhilipsTVAccessory {
     } else if (down && volume.current > volume.min) {
       volume.current = volume.current - 1;
     }
-    
+
     await this.httpClient.fetch(url, 'POST', volume);
     this.state.volume.update(volume);
     this.speakerService.updateCharacteristic(this.platform.Characteristic.Volume, this.calculateCurrentVolume(volume));
@@ -363,7 +422,7 @@ export class PhilipsTVAccessory {
   async getVolumeState(): Promise<VolumeState> {
     const url = this.config.api_url + 'audio/volume';
 
-    return await this.state.volume.getOrUpdate(() => 
+    return await this.state.volume.getOrUpdate(() =>
       this.httpClient.fetch<VolumeState>(url), new VolumeState(),
     ).then(volume => {
       this.speakerService.updateCharacteristic(this.platform.Characteristic.Mute, volume.muted);
