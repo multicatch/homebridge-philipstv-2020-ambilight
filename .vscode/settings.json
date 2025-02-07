@@ -6,5 +6,12 @@
   "editor.rulers": [
     140
   ],
-  "eslint.enable": true
+  "eslint.enable": true,
+  "eslint.format.enable": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  }
 }

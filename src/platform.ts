@@ -3,9 +3,6 @@ import type { API, Characteristic, IndependentPlatformPlugin, Logging, PlatformA
 import { PhilipsTVAccessory } from './platformAccessory.js';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings.js';
 
-// This is only required when using Custom Services and Characteristics not support by HomeKit
-import { EveHomeKitTypes } from 'homebridge-lib/EveHomeKitTypes';
-
 /**
  * HomebridgePlatform
  * This class is the main constructor for your plugin, this is where you should
@@ -104,7 +101,7 @@ export class PhilipsTV2020Platform implements IndependentPlatformPlugin {
 
       // create the accessory handler for the newly create accessory
       // this is imported from `platformAccessory.ts`
-      new PhilipsTVAccessory(this, accessory, device);
+      new PhilipsTVAccessory(accessory, this.log, this.Characteristic, this.Service, device);
 
       // link the accessory to your platform
       //this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);

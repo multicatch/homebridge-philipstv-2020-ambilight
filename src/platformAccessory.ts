@@ -1,10 +1,8 @@
-import { Categories, type CharacteristicValue, type Logger, type PlatformAccessory, type Service } from 'homebridge';
+import { Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
-import type { PhilipsTV2020Platform } from './platform.js';
-
-import request, { OptionsWithUrl } from 'request';
-import wol from 'wakeonlan';
-import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
+import { HttpClient, WOLCaster } from './protocol.js';
+import { Refreshable, TVService, TVSpeakerService } from './services.js';
+import { Log } from './logger.js';
 
 class PhilipsApiAuth {
   constructor(
@@ -33,415 +31,76 @@ class PhilipsTVConfig {
   ) { }
 }
 
-class HttpClient {
-  constructor(
-    private readonly config: PhilipsTVConfig,
-    private readonly log: Logger,
-  ) { }
-
-  fetch<T>(url: string, method: string = 'GET', requestBody?: object | undefined): Promise<T> {
-    const timeout = this.config.api_timeout;
-    const body = typeof requestBody === 'object' ? JSON.stringify(requestBody) : requestBody;
-
-    const options: OptionsWithUrl = {
-      url: url,
-      body: body,
-      rejectUnauthorized: false,
-      timeout: timeout,
-      method: method,
-      followAllRedirects: true,
-    };
-
-    if (this.config.api_auth) {
-      options.forever = true;
-      options.auth = {
-        user: this.config.api_auth.username,
-        pass: this.config.api_auth.password,
-        sendImmediately: false,
-      };
-    }
-
-    return new Promise((success, fail) => {
-      this.log.debug('[%s %s] Request to TV: %s', method, url, requestBody);
-      try {
-        request(options, (error, _response, body) => {
-          if (error) {
-            this.log.debug('[%s %s] Request error %s', method, url, error);
-            fail(error);
-          } else {
-            this.log.debug('[%s %s] Response from TV %s', method, url, body);
-            if (body && (body.indexOf('{') !== -1 || body.indexOf('[') !== -1)) {
-              try {
-                success(JSON.parse(body));
-              } catch (e) {
-                fail(e);
-              }
-            } else {
-              success({} as T);
-            }
-          }
-        });
-      } catch (e) {
-        this.log.debug('[%s %s] Error %s', e);
-        fail(e);
-      }
-    });
-  }
-}
-
-type AsyncSupplier<T> = () => Promise<T>;
-
-class StateCache<T> {
-  private state?: T;
-  private lastCheck = new Date('2000-01-02');
-  private pendingUpdates = 0;
-
-  constructor(
-    private readonly cacheTime: number = 5_000,
-  ) {
-    this.update = this.update.bind(this);
-    this.getIfNotExpired = this.getIfNotExpired.bind(this);
-    this.lockForUpdate = this.lockForUpdate.bind(this);
-    this.release = this.release.bind(this);
-    this.getOrUpdate = this.getOrUpdate.bind(this);
-  }
-
-  update(newState: T) {
-    this.state = newState;
-    this.lastCheck = new Date();
-  }
-
-  private lockForUpdate(): number {
-    const pending = this.pendingUpdates;
-    this.pendingUpdates += 1;
-    // There MAY be race condition but whatever, it's just smart home.
-    // If, for some reason, we allow for two simultaneous updates, then screw it, it's not gonna break anything.
-    return pending;
-  }
-
-  private release() {
-    this.pendingUpdates -= 1;
-  }
-
-  async getOrUpdate(supplier: AsyncSupplier<T>, defaultValue: T): Promise<T> {
-    const placeInQueue = this.lockForUpdate();
-
-    const value = this.getIfNotExpired();
-    if (value) {
-      this.release();
-      return value;
-    }
-    if (placeInQueue > 0) {
-      this.release();
-      return this.state || defaultValue;
-    }
-
-    try {
-      const newValue = await supplier();
-      this.update(newValue);
-      return newValue;
-    } finally {
-      this.release();
-    }
-  }
-
-  getIfNotExpired(): T | undefined {
-    if ((this.lastCheck.getTime() - new Date().getTime()) < this.cacheTime) {
-      return this.state || undefined;
-    } else {
-      return undefined;
-    }
-  }
-}
-
-class VolumeState {
-  min: number = 0;
-  max: number = 60;
-  current: number = 3;
-  muted: boolean = false;
-}
-
 /**
  * Philips TV accessory
  */
 export class PhilipsTVAccessory {
-  private service: Service;
-  private speakerService: Service;
+  private tvService: TVService;
+  private speakerService: TVSpeakerService;
+  private refreshables: Refreshable[] = [];
+
+  private log: Log;
 
   private httpClient: HttpClient;
-
-  private state = {
-    on: new StateCache<boolean>(),
-    volume: new StateCache<VolumeState>(),
-  };
+  private wolCaster: WOLCaster;
 
   constructor(
-    private readonly platform: PhilipsTV2020Platform,
     private readonly accessory: PlatformAccessory,
-    private readonly config: PhilipsTVConfig,
+    logger: Logger,
+    private readonly characteristic: typeof Characteristic,
+    private readonly serviceType: typeof Service,
+    config: PhilipsTVConfig,
   ) {
-    this.httpClient = new HttpClient(config, platform.log);
+    this.log = new Log(logger, config.name || 'null');
+    this.httpClient = new HttpClient(config, this.log);
+    this.wolCaster = new WOLCaster(this.log, config.wol_mac);
 
-    this.wake = this.wake.bind(this);
-
-    this.service = this.accessory.getService(this.platform.Service.Television) || this.accessory.addService(this.platform.Service.Television);
     this.accessory.category = Categories.TELEVISION;
 
-    this.service.getCharacteristic(this.platform.Characteristic.Active)
-      .onSet(this.setOn.bind(this))
-      .onGet(this.getOn.bind(this));
+    this.tvService = new TVService(accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType);
+    this.refreshables.push(this.tvService);
 
-    this.service.getCharacteristic(this.platform.Characteristic.RemoteKey)
-      .onSet(this.sendKey.bind(this));
+    this.speakerService = new TVSpeakerService(accessory, this.log, this.httpClient, characteristic, serviceType);
+    this.refreshables.push(this.speakerService);
 
-    const metadata = this.config.metadata;
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Name, config.name || 'Philips TV')
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, metadata?.manufacturer || 'Philips')
-      .setCharacteristic(this.platform.Characteristic.Model, metadata?.model || 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
+    const metadata = config.metadata;
+    this.accessory.getService(serviceType.AccessoryInformation)!
+      .setCharacteristic(characteristic.Name, config.name || 'Philips TV')
+      .setCharacteristic(characteristic.Manufacturer, metadata?.manufacturer || 'Philips')
+      .setCharacteristic(characteristic.Model, metadata?.model || 'Default-Model')
+      .setCharacteristic(characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
 
-    this.speakerService = this.accessory.getService(this.platform.Service.TelevisionSpeaker)
-      || this.accessory.addService(this.platform.Service.TelevisionSpeaker);
-
-    this.speakerService.getCharacteristic(this.platform.Characteristic.Mute)
-      .onSet(this.setMute.bind(this))
-      .onGet(this.getMute.bind(this));
-
-    this.speakerService.addCharacteristic(this.platform.Characteristic.Volume)
-      .onSet(this.setVolume.bind(this))
-      .onGet(this.getVolume.bind(this));
-
-    this.speakerService.getCharacteristic(this.platform.Characteristic.VolumeSelector)
-      .onSet(this.changeVolume.bind(this));
-
-    if (this.config.auto_update_interval >= 100) {
+    if (config.auto_update_interval >= 100) {
       this.refreshData = this.refreshData.bind(this);
-      setInterval(this.refreshData, this.config.auto_update_interval);
-    }
-  }
-
-  async wake(): Promise<boolean> {
-    const mac = this.config.wol_mac;
-    if (!mac) {
-      return new Promise(resolve => {
-        this.platform.log.debug('WOL not configured');
-        resolve(false);
-      });
-    }
-
-    this.platform.log.debug('Waking up TV with MAC %s', mac);
-    try {
-      await wol(mac);
-      this.platform.log.debug('WOL successful!');
-      return true;
-    } catch (error) {
-      this.platform.log.debug('WOL failed: %s', error);
-      throw error;
+      setInterval(this.refreshData, config.auto_update_interval);
     }
   }
 
   async refreshData() {
-    this.platform.log.debug('Performing scheduled auto-refresh.');
-
-    try {
-      await this.getOn()
-        .then(isOn => {
-          this.service.updateCharacteristic(this.platform.Characteristic.Active, isOn);
-        });
-    } catch (e) {
-      this.platform.log.debug('Cannot update activity status. Error: %s', e);
+    this.log.debug('Performing scheduled auto-refresh.');
+    for (const refreshable of this.refreshables) {
+      try {
+        refreshable.refreshData();
+      } catch (e) {
+        this.log.warn('Error refreshing data about the TV: %s', e);
+      }
     }
 
     try {
-      await this.getVolumeState(); // this has updates inside
-    } catch (e) {
-      this.platform.log.debug('Cannot update volume info. Error: %s', e);
-    }
-
-    try {
-      const systemUrl = this.config.api_url + 'system';
-      await this.httpClient.fetch(systemUrl)
+      await this.httpClient.fetchAPI('system')
         .then(data => {
           const resp = data as Record<string, Record<string, number>>;
           const apiVersion = resp.api_version;
           return apiVersion.Major + '.' + apiVersion.Minor + '.' + apiVersion.Patch;
         })
         .then(version => {
-          this.accessory.getService(this.platform.Service.AccessoryInformation)!
-            .setCharacteristic(this.platform.Characteristic.FirmwareRevision, version || '0.0.0');
+          this.accessory.getService(this.serviceType.AccessoryInformation)!
+            .setCharacteristic(this.characteristic.FirmwareRevision, version || '0.0.0');
         });
     } catch (e) {
-      this.platform.log.debug('Cannot update system info. Error: %s', e);
+      this.log.debug('Cannot update system info. Error: %s', e);
     }
   }
 
-  async getOn(): Promise<CharacteristicValue> {
-    const url = this.config.api_url + 'powerstate';
-
-    return await this.state.on.getOrUpdate(() =>
-      this.httpClient.fetch(url)
-        .then(data => {
-          const resp = data as Record<string, string>;
-          return resp.powerstate === 'On';
-        }).catch(e => {
-          this.platform.log('Cannot fetch TV power status, is it off?');
-          this.platform.log.debug('Error fetching TV status: %s', e);
-          return false;
-        }), false,
-    );
-  }
-
-  async setOn(newState: CharacteristicValue) {
-    const url = this.config.api_url + 'powerstate';
-
-    const isOn = await this.getOn();
-    if (isOn && !newState) {
-      this.platform.log.debug('TV is ON, turning off...');
-      await this.httpClient.fetch(url, 'POST', {
-        'powerstate': 'Standby',
-      });
-      this.state.on.update(false);
-    } else if (!isOn && newState) {
-      this.platform.log.debug('TV is OFF, waking up...');
-      await this.wake().then(() => this.httpClient.fetch(url, 'POST', {
-        'powerstate': 'On',
-      }));
-      this.state.on.update(true);
-    } else {
-      this.platform.log.debug('Is TV on? %s. Should be on? %s. Nothing to do.', isOn, newState);
-    }
-  }
-
-  async sendKey(keyValue: CharacteristicValue) {
-    let rawKey = '';
-    switch (keyValue) {
-    case RemoteKey.PLAY_PAUSE: {
-      rawKey = 'PlayPause';
-      break;
-    }
-    case RemoteKey.BACK: {
-      rawKey = 'Back';
-      break;
-    }
-    case RemoteKey.ARROW_UP: {
-      rawKey = 'CursorUp';
-      break;
-    }
-    case RemoteKey.ARROW_DOWN: {
-      rawKey = 'CursorDown';
-      break;
-    }
-    case RemoteKey.ARROW_LEFT: {
-      rawKey = 'CursorLeft';
-      break;
-    }
-    case RemoteKey.ARROW_RIGHT: {
-      rawKey = 'CursorRight';
-      break;
-    }
-    case RemoteKey.SELECT: {
-      rawKey = 'Confirm';
-      break;
-    }
-    case RemoteKey.EXIT: {
-      rawKey = 'Exit';
-      break;
-    }
-    case RemoteKey.INFORMATION: {
-      rawKey = 'Info';
-      break;
-    }
-    default: {
-      this.platform.log('Unknown key: %s', keyValue);
-      return;
-    }
-    }
-
-    await this.sendKeyRaw(rawKey);
-  }
-
-  async sendKeyRaw(value: string) {
-    const url = this.config.api_url + 'input/key';
-    await this.httpClient.fetch(url, 'POST', {
-      'key': value,
-    });
-  }
-
-  async getMute(): Promise<CharacteristicValue> {
-    return await this.state.volume.getOrUpdate(() =>
-      this.getVolumeState(), new VolumeState(),
-    ).then(data => data.muted);
-  }
-
-  async setMute(newState: CharacteristicValue) {
-    const isMuted = await this.getMute();
-    const url = this.config.api_url + 'audio/volume';
-
-    if (isMuted !== newState) {
-      const volume = this.state.volume.getIfNotExpired() || new VolumeState();
-      volume.muted = newState as boolean;
-
-      await this.httpClient.fetch(url, 'POST', volume);
-      this.state.volume.update(volume);
-    }
-  }
-
-  async getVolume(): Promise<CharacteristicValue> {
-    return await this.state.volume.getOrUpdate(() =>
-      this.getVolumeState(), new VolumeState(),
-    ).then(this.calculateCurrentVolume);
-  }
-
-  async setVolume(newVolume: CharacteristicValue) {
-    await this.getVolume(); // refresh state if needed
-    const url = this.config.api_url + 'audio/volume';
-
-    let volume = this.state.volume.getIfNotExpired() || new VolumeState();
-    volume = this.updateVolume(volume, newVolume as number);
-
-    await this.httpClient.fetch(url, 'POST', volume);
-    this.state.volume.update(volume);
-  }
-
-  async changeVolume(down: CharacteristicValue) {
-    const volume = await this.getVolumeState();
-    const url = this.config.api_url + 'audio/volume';
-
-    if (!down && volume.current < volume.max) {
-      volume.current = volume.current + 1;
-    } else if (down && volume.current > volume.min) {
-      volume.current = volume.current - 1;
-    }
-
-    await this.httpClient.fetch(url, 'POST', volume);
-    this.state.volume.update(volume);
-    this.speakerService.updateCharacteristic(this.platform.Characteristic.Volume, this.calculateCurrentVolume(volume));
-  }
-
-  async getVolumeState(): Promise<VolumeState> {
-    const url = this.config.api_url + 'audio/volume';
-
-    return await this.state.volume.getOrUpdate(() =>
-      this.httpClient.fetch<VolumeState>(url), new VolumeState(),
-    ).then(volume => {
-      this.speakerService.updateCharacteristic(this.platform.Characteristic.Mute, volume.muted);
-      this.speakerService.updateCharacteristic(this.platform.Characteristic.Volume, this.calculateCurrentVolume(volume));
-      return volume;
-    });
-  }
-
-  private calculateCurrentVolume(data: VolumeState): number {
-    let maxRange = data.max - data.min;
-    if (maxRange <= 0) {
-      maxRange = 1;
-    }
-    return Math.floor((1.0 * (data.current - data.min) / maxRange) * 100);
-  };
-
-  private updateVolume(data: VolumeState, value: number) {
-    data.current = Math.round(data.min + (data.max - data.min) * (value / 100.0));
-    return data;
-  }
 }
 
