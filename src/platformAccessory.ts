@@ -1,7 +1,7 @@
 import { Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
 import { HttpClient, WOLCaster } from './protocol.js';
-import { Refreshable, TVScreenService, TVService, TVSpeakerService } from './services.js';
+import { Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
 import { Log } from './logger.js';
 
 interface PhilipsTVConfig {
@@ -60,6 +60,10 @@ export class PhilipsTVAccessory {
     const tvScreen = new TVScreenService(accessory, this.log, this.httpClient, characteristic, serviceType);
     tvService.subscribe(tvScreen);
     this.refreshables.push(tvScreen);
+
+    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType);
+    tvService.subscribe(ambilight);
+    this.refreshables.push(ambilight);
 
     const metadata = config.metadata;
     this.accessory.getService(serviceType.AccessoryInformation)!

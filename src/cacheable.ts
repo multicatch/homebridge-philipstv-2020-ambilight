@@ -36,6 +36,10 @@ export class StateCache<T> {
     this.lastCheck = new Date('2000-01-02');
   }
 
+  bumpExpiration() {
+    this.lastCheck = new Date();
+  }
+
   async getOrUpdate(supplier: AsyncSupplier<T>, defaultValue: T): Promise<T> {
     const placeInQueue = this.lockForUpdate();
 

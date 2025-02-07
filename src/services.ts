@@ -354,7 +354,6 @@ export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdat
           const resp = data as Record<string, string>;
           return resp.screenstate === 'On';
         }).catch(e => {
-          this.log.info('Cannot fetch TV screen status, is it off?');
           this.log.debug('Error fetching TV screen status: %s', e);
           return false;
         }), false,
@@ -366,12 +365,130 @@ export class TVScreenService implements Refreshable, WantsToBeNotifiedAboutUpdat
     const shouldBeOn = newState as boolean;
 
     if (isOn !== shouldBeOn) {
-      this.log.debug('TV is ON, turning off...');
+      this.log.debug('Setting screen to %s', shouldBeOn);
       this.onState.update(shouldBeOn);
       await this.httpClient.fetchAPI(SCREEN_API, 'POST', {
         'screenstate': shouldBeOn ? 'On' : 'Off',
       });
       this.onState.update(shouldBeOn);
     }
+  }
+}
+
+
+/**
+ * 
+ * TV Ambilight
+ * 
+ */
+const AMBILIGHT_POWER_API = 'ambilight/power';
+const AMBILIGHT_CONFIG_API = 'ambilight/currentconfiguration';
+const AMBILIGHT_OFF_STYLE_NAME = 'OFF';
+
+class AmbilightCurrentStyle {
+  styleName: string = AMBILIGHT_OFF_STYLE_NAME;
+  isExpert: boolean = false;
+  menuSetting?: string;
+  stringValue?: string;
+}
+  
+const AMBILIGHT_OFF_STYLE = new AmbilightCurrentStyle();
+
+export class TVAmbilightService implements Refreshable, WantsToBeNotifiedAboutUpdates {
+  private service: Service;
+  private onState = new StateCache<boolean>();
+  private style = new StateCache<AmbilightCurrentStyle>(100);
+  private lastStyle: AmbilightCurrentStyle = new AmbilightCurrentStyle();
+
+  constructor(
+    accessory: PlatformAccessory,
+    private readonly log: Log,
+    private readonly httpClient: HttpClient,
+    private readonly characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+  ) {
+    this.service = accessory.addService(serviceType.Lightbulb, 'TV Ambilight', 'tvambilight');
+    this.service.setCharacteristic(characteristic.Name, 'Ambilight');
+    this.service.getCharacteristic(characteristic.On)
+      .onGet(this.getOn.bind(this))
+      .onSet(this.setOn.bind(this));
+  }
+
+  notify(): void {
+    this.onState.invalidate();
+    this.style.invalidate();
+    this.refreshData();
+  }
+
+  async refreshData() {
+    try {
+      const isOn = await this.getOn();
+      this.service.updateCharacteristic(this.characteristic.On, isOn);
+    } catch (e) {
+      this.log.debug('Cannot fetch screen state, the screen is probably OFF. Error: %s', e);
+    }
+  }
+
+  async getOn(): Promise<CharacteristicValue> {
+    const currentStyle = await this.getCurrentStyle();
+    const isActuallyOn = currentStyle.styleName !== AMBILIGHT_OFF_STYLE_NAME;
+
+    if (isActuallyOn) {
+      this.lastStyle = currentStyle;
+    }
+
+    return await this.onState.getOrUpdate(() =>
+      this.httpClient.fetchAPI(AMBILIGHT_POWER_API)
+        .then(data => {
+          const resp = data as Record<string, string>;
+          return resp.power === 'On' || isActuallyOn;
+        }).catch(e => {
+          this.log.debug('Error Ambilight status: %s', e);
+          return false;
+        }), false,
+    );
+  }
+
+  async setOn(newState: CharacteristicValue) {
+    const isOn = await this.getOn();
+    const currentStyle = await this.getCurrentStyle();
+    const shouldBeOn = newState as boolean;
+
+    const isActuallyOn = !isOn && currentStyle.styleName !== AMBILIGHT_OFF_STYLE_NAME;
+
+    this.onState.update(shouldBeOn);
+    this.log.debug('Setting Ambilight power status to %s', shouldBeOn);
+    
+    if (shouldBeOn) {
+      await this.setCurrentStyle(this.lastStyle);
+      await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
+        'power': 'On',
+      });
+
+    } else {
+      if (isActuallyOn) {
+        this.lastStyle = currentStyle;
+      }
+      await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
+        'power': 'Off',
+      });
+      await this.setCurrentStyle(AMBILIGHT_OFF_STYLE);
+    }
+
+    this.onState.update(shouldBeOn);
+  }
+
+  async getCurrentStyle(): Promise<AmbilightCurrentStyle> {
+    return await this.style.getOrUpdate(() =>
+      this.httpClient.fetchAPI<AmbilightCurrentStyle>(AMBILIGHT_CONFIG_API).catch(e => {
+        this.log.debug('Ambilight style check fail: %s', e);
+        this.style.bumpExpiration();
+        return this.style.getIfNotExpired() || new AmbilightCurrentStyle();
+      }), new AmbilightCurrentStyle(),
+    );
+  }
+
+  async setCurrentStyle(currentStyle: AmbilightCurrentStyle) {
+    await this.httpClient.fetchAPI(AMBILIGHT_CONFIG_API, 'POST', currentStyle);
   }
 }

@@ -76,7 +76,7 @@
               "type": "integer",
               "minimum": -1,
               "required": false,
-              "default": "10000"
+              "default": "30000"
             },
             "metadata": {
               "title": "TV metadata",
