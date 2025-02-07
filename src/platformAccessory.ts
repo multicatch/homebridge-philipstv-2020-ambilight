@@ -70,8 +70,9 @@ export class PhilipsTVAccessory {
       .setCharacteristic(characteristic.Model, metadata?.model || 'Default-Model')
       .setCharacteristic(characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
 
+    this.refreshData = this.refreshData.bind(this);
+    this.refreshData();
     if (config.auto_update_interval >= 100) {
-      this.refreshData = this.refreshData.bind(this);
       setInterval(this.refreshData, config.auto_update_interval);
     }
   }

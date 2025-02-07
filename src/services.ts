@@ -1,12 +1,19 @@
 import { Characteristic, CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 import { HttpClient, WOLCaster } from './protocol';
-import { StateCache } from './cacheable';
+import { StateCache } from './cacheable.js';
 import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 import { Log } from './logger';
 
+/**
+ * UTILS
+ */
 export interface Refreshable {
     refreshData(): Promise<void>;
 }
+
+function delay(ms: number): Promise<void> {
+  return new Promise(res => setTimeout(res, ms));
+} 
 
 /** 
  * 
@@ -76,9 +83,11 @@ export class TVService implements Refreshable {
 
     } else if (!isOn && newState) {
       this.log.debug('TV is OFF, waking up...');
-      await this.wolCaster.wake().then(() => this.httpClient.fetchAPI(POWER_API, 'POST', {
-        'powerstate': 'On',
-      }));
+      await this.wolCaster.wake()
+        .then(() => delay(100))
+        .then(() => this.httpClient.fetchAPI(POWER_API, 'POST', {
+          'powerstate': 'On',
+        }));
       this.onState.update(true);
 
     } else {
