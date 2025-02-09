@@ -13,6 +13,7 @@ interface PhilipsTVConfig {
   api_timeout?: number,
   auto_update_interval?: number,
   metadata?: PhilipsTVMetadata,
+  custom_color_ambilight?: boolean,
 }
 
 interface PhilipsApiAuth {
@@ -61,7 +62,7 @@ export class PhilipsTVAccessory {
     tvService.addDependant(tvScreen);
     this.refreshables.push(tvScreen);
 
-    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType);
+    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType, config.custom_color_ambilight || false);
     tvService.addDependant(ambilight);
     tvScreen.addDependant(ambilight);
     this.refreshables.push(ambilight);

@@ -78,6 +78,12 @@
               "required": false,
               "default": "30000"
             },
+            "custom_color_ambilight": {
+              "title": "Configurable custom color with Ambilight",
+              "description": "Whether you want to configure Ambilight color in HomeKit",
+              "type": "boolean",
+              "default": false
+            },
             "metadata": {
               "title": "TV metadata",
               "description": "Metadata shown in device details, optional.",

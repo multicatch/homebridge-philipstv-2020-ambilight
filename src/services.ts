@@ -429,7 +429,9 @@ class AmbilightColor {
 const AMBILIGHT_OFF_STYLE = new AmbilightCurrentStyle();
 
 export class TVAmbilightService extends PlatformService {
-  private service: Service;
+  private service?: Service;
+  private colorfulService?: Service;
+
   private onState = new StateCache<boolean>();
   private style = new StateCache<AmbilightCurrentStyle>(100);
   private lastStyle: AmbilightCurrentStyle = new AmbilightCurrentStyle();
@@ -442,41 +444,40 @@ export class TVAmbilightService extends PlatformService {
     private readonly httpClient: HttpClient,
     private readonly characteristic: typeof Characteristic,
     serviceType: typeof Service,
+    configurableAmbilightColors: boolean,
   ) {
     super(log, 4000);
 
-    this.service = accessory.addService(serviceType.Lightbulb, 'TV Ambilight', 'tvambilight');
-    this.service.setCharacteristic(characteristic.Name, 'Ambilight');
-    this.service.getCharacteristic(characteristic.On)
+    if (configurableAmbilightColors) {
+      this.configureColors(accessory, characteristic, serviceType);
+    } else {
+      this.service = accessory.addService(serviceType.Lightbulb, 'TV Ambilight', 'tvambilight');
+      this.service.setCharacteristic(characteristic.Name, 'Ambilight');
+      this.service.getCharacteristic(characteristic.On)
+        .onGet(this.getOn.bind(this))
+        .onSet(this.setOn.bind(this));
+    }
+  }
+
+  private configureColors(
+    accessory: PlatformAccessory,
+    characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+  ) {
+    this.colorfulService = accessory.addService(serviceType.Lightbulb, 'TV Colorful Ambilight', 'tvcolorfulambilight');
+    this.colorfulService.setCharacteristic(characteristic.Name, 'Colorful Ambilight');
+    this.colorfulService.getCharacteristic(characteristic.On)
       .onGet(this.getOn.bind(this))
       .onSet(this.setOn.bind(this));
-  }
-
-  private configureColors() {
-    this.service.getCharacteristic(this.characteristic.Brightness)
+    this.colorfulService.getCharacteristic(this.characteristic.Brightness)
       .onGet(this.getBrightness.bind(this))
       .onSet(this.setBrightness.bind(this));
-    this.service.getCharacteristic(this.characteristic.Hue)
+    this.colorfulService.getCharacteristic(this.characteristic.Hue)
       .onGet(this.getHue.bind(this))
       .onSet(this.setHue.bind(this));
-    this.service.getCharacteristic(this.characteristic.Saturation)
+    this.colorfulService.getCharacteristic(this.characteristic.Saturation)
       .onGet(this.getSaturation.bind(this))
       .onSet(this.setSaturation.bind(this));
-  }
-
-  private removeColors() {
-    const brightness = this.service.getCharacteristic(this.characteristic.Brightness);
-    if (brightness) {
-      this.service.removeCharacteristic(brightness);
-    }
-    const hue = this.service.getCharacteristic(this.characteristic.Hue);
-    if (hue) {
-      this.service.removeCharacteristic(hue);
-    }
-    const saturation = this.service.getCharacteristic(this.characteristic.Saturation);
-    if (saturation) {
-      this.service.removeCharacteristic(saturation);
-    } 
   }
 
   async forceRefresh() {
@@ -488,12 +489,15 @@ export class TVAmbilightService extends PlatformService {
   async refreshData() {
     try {
       const isOn = await this.getOn();
-      this.service.updateCharacteristic(this.characteristic.On, isOn);
+      this.service?.updateCharacteristic(this.characteristic.On, isOn);
 
-      const color = await this.getCurrentColor();
-      this.service.updateCharacteristic(this.characteristic.Brightness, color.brightness / 255.0 * 100);
-      this.service.updateCharacteristic(this.characteristic.Hue, color.hue);
-      this.service.updateCharacteristic(this.characteristic.Saturation, color.saturation);
+      const color = this.color;
+      if (this.colorfulService) {
+        this.colorfulService.updateCharacteristic(this.characteristic.On, isOn);
+        this.colorfulService.updateCharacteristic(this.characteristic.Brightness, color.brightness / 255.0 * 100);
+        this.colorfulService.updateCharacteristic(this.characteristic.Hue, color.hue);
+        this.colorfulService.updateCharacteristic(this.characteristic.Saturation, color.saturation);
+      }
     } catch (e) {
       this.log.debug('Cannot fetch screen state, the screen is probably OFF. Error: %s', e);
     }
@@ -546,6 +550,10 @@ export class TVAmbilightService extends PlatformService {
     }
 
     this.onState.update(shouldBeOn);
+    this.service?.updateCharacteristic(this.characteristic.On, shouldBeOn);
+    if (this.colorfulService) {
+      this.colorfulService.updateCharacteristic(this.characteristic.On, shouldBeOn);
+    }
   }
 
   async getCurrentStyle(): Promise<AmbilightCurrentStyle> {
@@ -557,12 +565,6 @@ export class TVAmbilightService extends PlatformService {
       }), new AmbilightCurrentStyle(),
     );
 
-    if (style.styleName === AMBILIGHT_LOUNGE_LIGHT) {
-      this.configureColors();
-    } else {
-      this.removeColors();
-    }
-
     return style;
   }
 
@@ -572,43 +574,33 @@ export class TVAmbilightService extends PlatformService {
   }
 
   async getBrightness(): Promise<number> {
-    const currentColor = await this.getCurrentColor();
-    return currentColor.brightness / 255.0 * 100.0;
+    return this.color.brightness / 255.0 * 100.0;
   }
 
   async setBrightness(newBrightness: CharacteristicValue) {
     const actualBrightness = Math.round((newBrightness as number) / 100.0 * 255.0);
-    const currentColor = await this.getCurrentColor();
-    currentColor.brightness = actualBrightness;
-    await this.setCurrentColor(currentColor);
+    this.color.brightness = actualBrightness;
+    await this.setCurrentColor(this.color);
   }
 
   async getHue(): Promise<number> {
-    const currentColor = await this.getCurrentColor();
-    return currentColor.hue;
+    return this.color.hue;
   }
 
   async setHue(newHue: CharacteristicValue) {
     const actualHue = (newHue as number);
-    const currentColor = await this.getCurrentColor();
-    currentColor.hue = actualHue;
-    await this.setCurrentColor(currentColor);
+    this.color.hue = actualHue;
+    await this.setCurrentColor(this.color);
   }
 
   async getSaturation(): Promise<number> {
-    const currentColor = await this.getCurrentColor();
-    return currentColor.saturation;
+    return this.color.saturation;
   }
 
   async setSaturation(newSaturation: CharacteristicValue) {
-    const actualHue = (newSaturation as number);
-    const currentColor = await this.getCurrentColor();
-    currentColor.saturation = actualHue;
-    await this.setCurrentColor(currentColor);
-  }
-
-  async getCurrentColor(): Promise<AmbilightColor> {
-    return this.color;
+    const actualSaturation = (newSaturation as number);
+    this.color.saturation = actualSaturation;
+    await this.setCurrentColor(this.color);
   }
 
   async setCurrentColor(color: AmbilightColor) {
