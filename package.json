@@ -3,7 +3,7 @@
   "displayName": "PhilipsTV 2020 with Ambilight",
   "type": "module",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
   "description": "Homebridge Plugin for Android Philips TV API 6 with Ambilight.",
   "author": "multicatch",
   "license": "Apache-2.0",
@@ -16,7 +16,8 @@
     "url": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight/issues"
   },
   "keywords": [
-    "homebridge-plugin"
+    "homebridge-plugin",
+    "philipstv"
   ],
   "main": "dist/index.js",
   "engines": {
