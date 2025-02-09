@@ -1,4 +1,4 @@
-# Homebridge Platform Plugin Template
+# Philips TV ver 6 with Ambilight - Homebridge Plugin
 
 This plugin allows you to expose your **Philips TV with API ver. 6** to HomeKit.
 
