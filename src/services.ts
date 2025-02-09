@@ -444,6 +444,7 @@ export class TVAmbilightService extends PlatformService {
     private readonly httpClient: HttpClient,
     private readonly characteristic: typeof Characteristic,
     serviceType: typeof Service,
+    private readonly wolCaster: WOLCaster,
     configurableAmbilightColors: boolean,
   ) {
     super(log, 4000);
@@ -534,6 +535,7 @@ export class TVAmbilightService extends PlatformService {
     this.log.debug('Setting Ambilight power status to %s', shouldBeOn);
 
     if (shouldBeOn) {
+      await this.wolCaster.wakeAndWarmUp();
       await this.setCurrentStyle(this.lastStyle);
       await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
         'power': 'On',

@@ -62,7 +62,8 @@ export class PhilipsTVAccessory {
     tvService.addDependant(tvScreen);
     this.refreshables.push(tvScreen);
 
-    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType, config.custom_color_ambilight || false);
+    const ambilightWithColors = config.custom_color_ambilight || false;
+    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType, this.wolCaster, ambilightWithColors);
     tvService.addDependant(ambilight);
     tvScreen.addDependant(ambilight);
     this.refreshables.push(ambilight);
