@@ -10,7 +10,7 @@
   "homepage": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight",
   "repository": {
     "type": "git",
-    "url": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight.git"
+    "url": "git+https://github.com/multicatch/homebridge-philipstv-2020-ambilight.git"
   },
   "bugs": {
     "url": "https://github.com/multicatch/homebridge-philipstv-2020-ambilight/issues"
