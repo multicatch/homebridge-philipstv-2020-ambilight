@@ -12,8 +12,10 @@ And it also allows you to control it via Siri.
 * control Ambilight (with color selection),
 * this plugin also automatically updates the status of the TV, thus you can make automations.
 
-#![TV as shown in HomeKit](./doc/homekit_view.jpeg)
-#![Remote controlling the TV via iPhone](./doc/remote.jpeg)
+![TV as shown in HomeKit](./doc/homekit_view.jpeg)
+![Remote controlling the TV via iPhone](./doc/remote.jpeg)
+
+After configuring the plugin, you need to pair the TV via *Add accessory* > *More*. 
 
 #### Note about controlling TV volume
 
