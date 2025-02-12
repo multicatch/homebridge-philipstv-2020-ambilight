@@ -22,24 +22,24 @@ export abstract class PlatformService implements Refreshable {
 
   abstract refreshData(): Promise<void>;
 
-  async forceRefresh() {
-    await this.refreshData();
-  }
-
   addDependant<T extends PlatformService>(other: T) {
     this.others.push(other);
   }
 
-  refreshDependants() {
+  notifyDependants() {
     setTimeout(() => {
       try {
         for (const other of this.others) {
-          other.forceRefresh();
+          other.acknowledge(this);
         }
       } catch (e) {
         this.log.warn('Notification about update failed: %s', e);
       }
     }, this.refreshTimeout);
+  }
+
+  async acknowledge(updatedService: unknown) {
+    await this.refreshData();
   }
 }
 
@@ -110,7 +110,7 @@ export class TVService extends PlatformService {
         'powerstate': 'Standby',
       }).then(() => {
         this.onState.update(false);
-        this.refreshDependants();
+        this.notifyDependants();
       });
 
     } else if (!isOn && newState) {
@@ -122,7 +122,7 @@ export class TVService extends PlatformService {
         }))
         .then(() => {
           this.onState.update(true);
-          this.refreshDependants();
+          this.notifyDependants();
         });
 
     } else {
@@ -230,7 +230,7 @@ export class TVSpeakerService extends PlatformService {
       .onSet(this.changeVolume.bind(this));
   }
 
-  async forceRefresh() {
+  override async acknowledge() {
     this.volumeState.invalidate();
     await this.refreshData();
   }
@@ -259,7 +259,7 @@ export class TVSpeakerService extends PlatformService {
       await this.httpClient.fetchAPI(VOLUME_API, 'POST', volume);
       this.volumeState.update(volume);
 
-      this.refreshDependants();
+      this.notifyDependants();
     }
   }
 
@@ -290,7 +290,7 @@ export class TVSpeakerService extends PlatformService {
 
     await this.httpClient.fetchAPI(VOLUME_API, 'POST', volume);
     this.volumeState.update(volume);
-    this.refreshDependants();
+    this.notifyDependants();
     this.speakerService.updateCharacteristic(this.characteristic.Volume, this.calculateCurrentVolume(volume));
   }
 
@@ -346,7 +346,7 @@ export class TVScreenService extends PlatformService {
       .onSet(this.setOn.bind(this));
   }
 
-  async forceRefresh() {
+  override async acknowledge() {
     this.onState.invalidate();
     await this.refreshData();
   }
@@ -384,7 +384,7 @@ export class TVScreenService extends PlatformService {
         'screenstate': shouldBeOn ? 'On' : 'Off',
       });
       this.onState.update(shouldBeOn);
-      this.refreshDependants();
+      this.notifyDependants();
     }
   }
 }
@@ -434,7 +434,11 @@ export class TVAmbilightService extends PlatformService {
 
   private onState = new StateCache<boolean>();
   private style = new StateCache<AmbilightCurrentStyle>(100);
-  private lastStyle: AmbilightCurrentStyle = new AmbilightCurrentStyle();
+
+  private isTVOn: boolean = false;
+  private isScreenOn: boolean = false;
+  private lastStyleOn: AmbilightCurrentStyle = new AmbilightCurrentStyle();
+  private lastStyleOff: AmbilightCurrentStyle = new AmbilightCurrentStyle();
 
   private readonly color: AmbilightColor = new AmbilightColor(0, 0, 255);
 
@@ -481,7 +485,13 @@ export class TVAmbilightService extends PlatformService {
       .onSet(this.setSaturation.bind(this));
   }
 
-  async forceRefresh() {
+  override async acknowledge(updatedService: unknown) {
+    if (updatedService instanceof TVScreenService) {
+      this.isScreenOn = await updatedService.getOn() as boolean;
+    }
+    if (updatedService instanceof TVService) {
+      this.isTVOn = await updatedService.getOn() as boolean;
+    }
     this.onState.invalidate();
     this.style.invalidate();
     await this.refreshData();
@@ -509,7 +519,7 @@ export class TVAmbilightService extends PlatformService {
     const isActuallyOn = currentStyle.styleName !== AMBILIGHT_OFF_STYLE_NAME;
 
     if (isActuallyOn) {
-      this.lastStyle = currentStyle;
+      this.updateLastStyle(currentStyle);
     }
 
     return await this.onState.getOrUpdate(() =>
@@ -535,15 +545,17 @@ export class TVAmbilightService extends PlatformService {
     this.log.debug('Setting Ambilight power status to %s', shouldBeOn);
 
     if (shouldBeOn) {
-      await this.wolCaster.wakeAndWarmUp();
-      await this.setCurrentStyle(this.lastStyle);
+      if (!this.isTVOn) {
+        await this.wolCaster.wakeAndWarmUp();
+      }
+      await this.setCurrentStyle(this.getLastStyle());
       await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
         'power': 'On',
       });
 
     } else {
       if (isActuallyOn) {
-        this.lastStyle = currentStyle;
+        this.updateLastStyle(currentStyle);
       }
       await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
         'power': 'Off',
@@ -607,7 +619,7 @@ export class TVAmbilightService extends PlatformService {
 
   async setCurrentColor(color: AmbilightColor) {
     const style = this.createCustomColor(color);
-    this.lastStyle = style;
+    this.updateLastStyle(style);
     await this.setCurrentStyle(style);
     await this.setOn(color.brightness > 0);
   }
@@ -620,5 +632,21 @@ export class TVAmbilightService extends PlatformService {
     style.isExpert = true;
 
     return style;
+  }
+
+  private updateLastStyle(style: AmbilightCurrentStyle) {
+    if (this.isScreenOn) {
+      this.lastStyleOn = style;
+    } else {
+      this.lastStyleOff = style;
+    }
+  }
+
+  private getLastStyle() {
+    if (this.isScreenOn) {
+      return this.lastStyleOn;
+    } else {
+      return this.lastStyleOff;
+    }
   }
 }
