@@ -38,6 +38,7 @@ export abstract class PlatformService implements Refreshable {
     }, this.refreshTimeout);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async acknowledge(updatedService: unknown) {
     await this.refreshData();
   }
