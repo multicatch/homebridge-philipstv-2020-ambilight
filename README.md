@@ -28,7 +28,7 @@ The *remote* on your iPhone also **allows you to mute the TV** or **control its 
 Just use the Homebrige UI to configure it. But if you prefer JSON config, use this cheat sheet:
 
 ```json
-    "platforms: [ 
+    "platforms": [ 
         {
             "tvs": [
                 {
@@ -87,7 +87,7 @@ Username and password will be located in `settings.ini`
 
 You can then add username and password key in your homebridge config, example:
 ```json
-    "platforms: [ 
+    "platforms": [ 
         {
             "tvs": [
               {
