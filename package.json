@@ -2,7 +2,7 @@
   "name": "homebridge-philipstv-2020-ambilight",
   "displayName": "PhilipsTV 2020 with Ambilight",
   "type": "module",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": false,
   "description": "Homebridge Plugin for Android Philips TV API 6 with Ambilight.",
   "author": "multicatch",

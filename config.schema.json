@@ -108,6 +108,41 @@
                   "required": false
                 }
               }
+            },
+            "key_mapping": {
+              "title": "Custom mapping for TV remote keys",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "remote_key": {
+                    "title": "Homebridge RemoteKey",
+                    "required": true,
+                    "type": "string",
+                    "default": "PLAY_PAUSE",
+                    "enum": [
+                      "REWIND",
+                      "FAST_FORWARD",
+                      "NEXT_TRACK",
+                      "PREVIOUS_TRACK",
+                      "PLAY_PAUSE",
+                      "BACK",
+                      "ARROW_UP",
+                      "ARROW_DOWN",
+                      "ARROW_LEFT",
+                      "ARROW_RIGHT",
+                      "SELECT",
+                      "EXIT",
+                      "INFORMATION"
+                    ]
+                  },
+                  "philips_key": {
+                    "title": "Philips TV remote key ID",
+                    "type": "string",
+                    "required": true
+                  }
+                }
+              }
             }
           }
         }

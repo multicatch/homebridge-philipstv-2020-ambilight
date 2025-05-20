@@ -2,6 +2,7 @@ import { Categories, Characteristic, Logger, type PlatformAccessory, type Servic
 
 import { HttpClient, WOLCaster } from './protocol.js';
 import { Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
+import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 import { Log } from './logger.js';
 
 interface PhilipsTVConfig {
@@ -14,6 +15,12 @@ interface PhilipsTVConfig {
   auto_update_interval?: number,
   metadata?: PhilipsTVMetadata,
   custom_color_ambilight?: boolean,
+  key_mapping?: KeyMapping[],
+}
+
+interface KeyMapping {
+  remote_key: string,
+  philips_key: string,
 }
 
 interface PhilipsApiAuth {
@@ -52,7 +59,8 @@ export class PhilipsTVAccessory {
 
     this.accessory.category = Categories.TELEVISION;
 
-    const tvService = new TVService(accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType);
+    const keyMapping = this.prepareRemoteKeyMapping(config.key_mapping);
+    const tvService = new TVService(accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType, keyMapping);
     this.refreshables.push(tvService);
 
     const speakerService = new TVSpeakerService(accessory, this.log, this.httpClient, characteristic, serviceType);
@@ -109,5 +117,33 @@ export class PhilipsTVAccessory {
     }
   }
 
+  prepareRemoteKeyMapping(mappings?: KeyMapping[]): Map<number, string> {
+    const result = new Map<number, string>();
+    result.set(RemoteKey.PLAY_PAUSE, 'PlayPause');
+    result.set(RemoteKey.BACK, 'Back');
+    result.set(RemoteKey.ARROW_UP, 'CursorUp');
+    result.set(RemoteKey.ARROW_DOWN, 'CursorDown');
+    result.set(RemoteKey.ARROW_LEFT, 'CursorLeft');
+    result.set(RemoteKey.ARROW_RIGHT, 'CursorRight');
+    result.set(RemoteKey.SELECT, 'Confirm');
+    result.set(RemoteKey.EXIT, 'Exit');
+    result.set(RemoteKey.INFORMATION, 'Info');
+    if (mappings === undefined) {
+      return result;
+    }
+
+    type RemoteKeyName = keyof typeof RemoteKey;
+    for (const mapping of mappings) {
+      const mappedKey = RemoteKey[mapping.remote_key as RemoteKeyName];
+      if (!mappedKey || typeof mappedKey !== 'number') {
+        this.log.error('RemoteKey from key_mapping is invalid: %s', mapping.remote_key);
+      } else {
+        const key = mappedKey as number;
+        this.log.info('Overriding key %s (%s) to %s', mapping.remote_key, key, mapping.philips_key);
+        result.set(key, mapping.philips_key);
+      }
+    }
+    return result;
+  }
 }
 

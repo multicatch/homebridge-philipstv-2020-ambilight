@@ -47,7 +47,13 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                         "model": "55OLED705/12",
                         "manufacturer": "Philips",
                         "serialNumber": "custom_serial_number(optional)"
-                    }
+                    },
+                    "key_mapping": [
+                        { 
+                            "remote_key": "PLAY_PAUSE",
+                            "philips_key": "Source"
+                        }
+                    ]
                 }
             ],
             "platform": "PhilipsTV2020Platform"
@@ -63,10 +69,10 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
 * `api_timeout` - maximum time the plugin will wait for your TV to respond (keep it below 5s),
 * `auto_update_interval` - interval of background status checks (this is a check whether your TV is on, it will update the status in Homekit),
 * `custom_color_ambilight` - if true then the color of Ambilight will be configurable,
-* `metadata` - technical data about your TV (optional).
+* `metadata` - technical data about your TV (optional),
+* `key_mapping` - non-standard mapping for remote keys (optional). `remote_key` is a key from a class RemoteKey. `philips_key` is a key as used in the Philips TV API.
 
 **Note:** the delay/time unit is *milliseconds*. 30000 means **30 seconds**.
-
 
 ## Credentials for 2016 (and newer?) models with Android TV
 
@@ -103,3 +109,101 @@ You can then add username and password key in your homebridge config, example:
     ]
 ]
  ```
+
+
+
+## RemoteKey and Philips Key
+
+This section describes keys used for custom remote key mapping (`key_mapping`). 
+This mapping is used to override default key bindings used for iOS TV remote widget.
+
+Currently Homebridge supports only the following RemoteKeys (you can use those in `remote_key` field):
+
+```
+    static readonly REWIND = 0;
+    static readonly FAST_FORWARD = 1;
+    static readonly NEXT_TRACK = 2;
+    static readonly PREVIOUS_TRACK = 3;
+    static readonly ARROW_UP = 4;
+    static readonly ARROW_DOWN = 5;
+    static readonly ARROW_LEFT = 6;
+    static readonly ARROW_RIGHT = 7;
+    static readonly SELECT = 8;
+    static readonly BACK = 9;
+    static readonly EXIT = 10;
+    static readonly PLAY_PAUSE = 11;
+    static readonly INFORMATION = 15;
+```
+
+Meanwhile, Philips TV supports the following keys (use these in `philips_key`):
+
+* Standby
+* Back
+* Find
+* RedColour
+* GreenColour
+* YellowColour
+* BlueColour
+* Home
+* VolumeUp
+* VolumeDown
+* Mute
+* Options
+* Dot
+* Digit0
+* Digit1
+* Digit2
+* Digit3
+* Digit4
+* Digit5
+* Digit6
+* Digit7
+* Digit8
+* Digit9
+* Info
+* CursorUp
+* CursorDown
+* CursorLeft
+* CursorRight
+* Confirm
+* Next
+* Previous
+* Adjust
+* WatchTV
+* Viewmode
+* Teletext
+* Subtitle
+* ChannelStepUp
+* ChannelStepDown
+* Source
+* AmbilightOnOff
+* PlayPause
+* Play
+* Pause
+* FastForward
+* Stop
+* Rewind
+* Record
+* Online
+
+
+For example, if you wish to remap a `PLAY_PAUSE` button to `Source`, you can add this `key_mapping`:
+
+``json
+    "platforms": [ 
+        {
+            "tvs": [
+                {
+                    ...
+                    "key_mapping": [
+                        { 
+                            "remote_key": "PLAY_PAUSE",
+                            "philips_key": "Source"
+                        }
+                    ]
+                }
+            ],
+            "platform": "PhilipsTV2020Platform"
+        }
+    ]
+```

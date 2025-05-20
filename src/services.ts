@@ -1,7 +1,6 @@
 import { Characteristic, CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
 import { HttpClient, WOLCaster } from './protocol';
 import { StateCache } from './cacheable.js';
-import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 import { Log } from './logger';
 
 /**
@@ -64,6 +63,7 @@ export class TVService extends PlatformService {
         private readonly wolCaster: WOLCaster,
         private readonly characteristic: typeof Characteristic,
         serviceType: typeof Service,
+        private readonly keyMapping: Map<number, string>,
   ) {
     super(log, 1500);
     this.service = this.accessory.getService(serviceType.Television) || this.accessory.addService(serviceType.Television);
@@ -132,50 +132,11 @@ export class TVService extends PlatformService {
   }
 
   async sendKey(keyValue: CharacteristicValue) {
-    let rawKey = '';
-    switch (keyValue) {
-    case RemoteKey.PLAY_PAUSE: {
-      rawKey = 'PlayPause';
-      break;
-    }
-    case RemoteKey.BACK: {
-      rawKey = 'Back';
-      break;
-    }
-    case RemoteKey.ARROW_UP: {
-      rawKey = 'CursorUp';
-      break;
-    }
-    case RemoteKey.ARROW_DOWN: {
-      rawKey = 'CursorDown';
-      break;
-    }
-    case RemoteKey.ARROW_LEFT: {
-      rawKey = 'CursorLeft';
-      break;
-    }
-    case RemoteKey.ARROW_RIGHT: {
-      rawKey = 'CursorRight';
-      break;
-    }
-    case RemoteKey.SELECT: {
-      rawKey = 'Confirm';
-      break;
-    }
-    case RemoteKey.EXIT: {
-      rawKey = 'Exit';
-      break;
-    }
-    case RemoteKey.INFORMATION: {
-      rawKey = 'Info';
-      break;
-    }
-    default: {
+    const rawKey = this.keyMapping.get(keyValue as number);
+    if (rawKey == null) {
       this.log.info('Unknown key pressed: %s', keyValue);
       return;
     }
-    }
-
     await this.sendKeyRaw(rawKey);
   }
 
