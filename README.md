@@ -192,7 +192,7 @@ Meanwhile, Philips TV supports the following keys (use these in `philips_key`):
 
 For example, if you wish to remap a `PLAY_PAUSE` button to `Source`, you can add this `key_mapping`:
 
-``json
+```json
     "platforms": [ 
         {
             "tvs": [
