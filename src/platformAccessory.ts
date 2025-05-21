@@ -4,11 +4,13 @@ import { HttpClient, WOLCaster } from './protocol.js';
 import { Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
 import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 import { Log } from './logger.js';
+import { Options } from 'wakeonlan';
 
 interface PhilipsTVConfig {
   name?: string;
   api_url: string;
   wol_mac?: string,
+  wol_options?: Options,
   wake_up_delay?: number,
   api_auth?: PhilipsApiAuth,
   api_timeout?: number,
@@ -55,7 +57,7 @@ export class PhilipsTVAccessory {
     this.log = new Log(logger, config.name || 'null');
     this.log.debug('Using config: %s', config);
     this.httpClient = new HttpClient(config, this.log);
-    this.wolCaster = new WOLCaster(this.log, config.wol_mac, config.wake_up_delay);
+    this.wolCaster = new WOLCaster(this.log, config.wol_mac, config.wake_up_delay, config.wol_options);
 
     this.accessory.category = Categories.TELEVISION;
 

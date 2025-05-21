@@ -1,6 +1,6 @@
 
 import request, { OptionsWithUrl } from 'request';
-import wol from 'wakeonlan';
+import wol, { Options } from 'wakeonlan';
 import { Log } from './logger.js';
 import { delay } from './util.js';
 
@@ -92,6 +92,7 @@ export class WOLCaster {
     private readonly log: Log,
     private readonly wol_mac?: string,
     wake_up_delay?: number,
+    private readonly options?: Options,
   ) {
     this.wake_up_delay = wake_up_delay || DEFAULT_WAKE_UP_DELAY;
   }
@@ -117,7 +118,7 @@ export class WOLCaster {
 
     this.log.debug('Waking up TV with MAC %s', mac);
     try {
-      await wol(mac);
+      await wol(mac, this.options);
       this.log.debug('WOL successful!');
       return true;
     } catch (error) {

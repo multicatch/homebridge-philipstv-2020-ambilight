@@ -61,16 +61,19 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
     ]
 ```
 
-* `name` - your TV needs a name, choose whatever you want,
-* `api_url` - full API URL, with protocol (https), IP address, port and API version (/6/),
-* `wol_mac` - MAC Address of your TV WiFi; you need this if you want to turn it on,
-* `wake_up_delay` - your TV needs to 'warm up' after waking up to actually handle the request that turns it on, it's the time needed for this warm-up,
-* `api_auth` - credentials for the API (see next section),
-* `api_timeout` - maximum time the plugin will wait for your TV to respond (keep it below 5s),
-* `auto_update_interval` - interval of background status checks (this is a check whether your TV is on, it will update the status in Homekit),
-* `custom_color_ambilight` - if true then the color of Ambilight will be configurable,
-* `metadata` - technical data about your TV (optional),
-* `key_mapping` - non-standard mapping for remote keys (optional). `remote_key` is a key from a class RemoteKey. `philips_key` is a key as used in the Philips TV API.
+| Property | Description |
+|-|-|
+| `name` | Your TV needs a name, choose whatever you want | 
+| `api_url` | Full API URL, with protocol (https), IP address, port and API version (/6/) |
+| `wol_mac` | MAC Address of your TV WiFi; you need this if you want to turn it on. |
+| `wake_up_delay` | Your TV needs to 'warm up' after waking up to actually handle the request that turns it on, it's the time needed for this warm-up |
+| `api_auth` | Credentials for the API (see next section) |
+| `api_timeout` | Maximum time the plugin will wait for your TV to respond (keep it below 5s) |
+| `auto_update_interval` | Interval of background status checks (this is a check whether your TV is on, it will update the status in Homekit) |
+| `custom_color_ambilight` | If true then the color of Ambilight will be configurable |
+| `metadata` | Technical data about your TV (optional) |
+| `key_mapping` | Non-standard mapping for remote keys (optional). `remote_key` is a key from a class RemoteKey. `philips_key` is a key as used in the Philips TV API |
+| `wol_options` | Advanced WOL options (optional) |
 
 **Note:** the delay/time unit is *milliseconds*. 30000 means **30 seconds**.
 
@@ -207,3 +210,65 @@ For example, if you wish to remap a `PLAY_PAUSE` button to `Source`, you can add
         }
     ]
 ```
+
+## Advanced Wake On LAN (WOL) config
+
+If you have problems with WOL (for example you see ` Unknown system error -126` in logs when you try to turn the TV on), then you can try and adjust advanced WOL settings.
+
+**Do not set any of these settings if your WOL works correctly!**
+
+```json
+    "platforms": [ 
+        {
+            "tvs": [
+                {
+                    ...
+                    "wol_options": {
+                        "from": "10.10.10.101",
+                        "port": 9,
+                        "address": "255.255.255.255",
+                        "count": 3,
+                        "interval": 100
+                    }
+                }
+            ],
+            "platform": "PhilipsTV2020Platform"
+        }
+    ]
+```
+
+**All of these settings are optional, do not set the settings that you don't need!**
+
+
+| Property | Description |
+|-|-|
+| `from` | IP address of the network interface that "talks" to the TV. This address should point to an interface that connects to the same subnet as the TV. | 
+| `port` | Port used for WOL broadcast (default: 9)  | 
+| `address` | Broadcast address. Default address 255.255.255.255 automatically broadcasts to the network interface set in `from` |
+| `count` | The number of WOL retries (default: 3) |
+| `interval` | The interval of WOL retries in ms (default: 100) |
+
+To get the `from` address, you can use `ip a`. This command lists all your network interfaces with their IP addresses.
+
+For example, I have a TV connected to Ethernet, having IP address `10.10.10.123`. 
+
+The command `ip a` (run on the Homebridge host) returns the following output:
+
+```text
+1: eth0: <BROADCAST,MULTICAST,UP> mtu 1500 qdisc cbq qlen 100
+    link/ether 00:a0:cc:66:18:78 brd ff:ff:ff:ff:ff:ff
+    inet 193.233.7.90/24 brd 193.233.7.255 scope global eth0
+    inet6 3ffe:2400:0:1:2a0:ccff:fe66:1878/64 scope global dynamic 
+       valid_lft forever preferred_lft 604746sec
+    inet6 fe80::2a0:ccff:fe66:1878/10 scope link 
+2: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 08:00:27:e2:80:18 brd ff:ff:ff:ff:ff:ff
+    inet 10.10.10.101/24 brd 10.0.2.255 scope global eth0 valid_lft forever preferred_lft forever
+```
+
+This means that the Homebridge host has two active network interfaces (*eth0* and *eth1*). 
+Look at the *inet* values. *eth0* has IP `193.233.7.90`. *eth1* has IP `10.10.10.101`.
+
+The TV has IP `10.10.10.123`. That means *eth1* connects to the TV, because it is the same subnet.
+
+In this case you should use `10.10.10.101` as the correct value for the `from` field.
