@@ -37,6 +37,7 @@
             },
             "wol_options": {
               "title": "Advanced Wake On LAN options",
+              "expandable": true,
               "type": "object",
               "required": false,
               "properties": {
@@ -184,6 +185,194 @@
                     "type": "string",
                     "required": true
                   }
+                }
+              }
+            },
+            "ambilight_options": {
+              "title": "Ambilight options",
+              "expandable": true,
+              "required": false,
+              "type": "object",
+              "properties": {
+                "default_on_style": {
+                  "title": "Default style for Ambilight when the screen is ON",
+                  "expandable": true,
+                  "description": "You can get this style by enabling DEBUG in Homebridge and copying TV response for ambilight/currentconfiguration from logs",
+                  "type": "object",
+                  "required": false,
+                  "properties": {
+                    "styleName": {
+                      "type": "string",
+                      "required": true
+                    },
+                    "isExpert": {
+                      "type": "boolean",
+                      "required": true,
+                      "default": false
+                    },
+                    "menuSetting": {
+                      "type": "string",
+                      "required": false
+                    },
+                    "stringValue": {
+                      "type": "string",
+                      "required": false
+                    },
+                    "algorithm": {
+                      "type": "string",
+                      "required": false
+                    },
+                    "colorSettings": {
+                      "type": "object",
+                      "required": false,
+                      "properties": {
+                        "color": {
+                          "type": "object",
+                          "properties": {
+                            "hue": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 360
+                            },
+                            "saturation": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "brightness": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 255
+                            }
+                          }
+                        },
+                        "colorDelta": {
+                          "type": "object",
+                          "properties": {
+                            "hue": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 360
+                            },
+                            "saturation": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "brightness": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 255
+                            }
+                          },
+                          "speed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mode": {
+                            "type": "string",
+                            "required": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "always_use_default_on": {
+                  "title": "Always use default style when the screen is ON",
+                  "description": "This will override default behavior and will reset Ambilight to default style when you turn Ambilight ON (instead of restoring last used style)",
+                  "type": "boolean",
+                  "default": false
+                },
+                "default_off_style": {
+                  "title": "Default style for Ambilight when the screen is OFF",
+                  "expandable": true,
+                  "description": "You can get this style by enabling DEBUG in Homebridge and copying TV response for ambilight/currentconfiguration from logs",
+                  "type": "object",
+                  "required": false,
+                  "properties": {
+                    "styleName": {
+                      "type": "string",
+                      "required": true
+                    },
+                    "isExpert": {
+                      "type": "boolean",
+                      "required": true,
+                      "default": false
+                    },
+                    "menuSetting": {
+                      "type": "string",
+                      "required": false
+                    },
+                    "stringValue": {
+                      "type": "string",
+                      "required": false
+                    },
+                    "algorithm": {
+                      "type": "string",
+                      "required": false
+                    },
+                    "colorSettings": {
+                      "type": "object",
+                      "required": false,
+                      "properties": {
+                        "color": {
+                          "type": "object",
+                          "properties": {
+                            "hue": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 360
+                            },
+                            "saturation": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "brightness": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 255
+                            }
+                          }
+                        },
+                        "colorDelta": {
+                          "type": "object",
+                          "properties": {
+                            "hue": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 360
+                            },
+                            "saturation": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            "brightness": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 255
+                            }
+                          },
+                          "speed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mode": {
+                            "type": "string",
+                            "required": false
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "always_use_default_off": {
+                  "title": "Always use default style when the screen is OFF",
+                  "description": "This will override default behavior and will reset Ambilight to default style when you turn Ambilight ON (instead of restoring last used style)",
+                  "type": "boolean",
+                  "default": false
                 }
               }
             }

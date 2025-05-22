@@ -2,6 +2,7 @@ import { Characteristic, CharacteristicValue, PlatformAccessory, Service } from 
 import { HttpClient, WOLCaster } from './protocol';
 import { StateCache } from './cacheable.js';
 import { Log } from './logger';
+import { delay } from './util.js';
 
 /**
  * UTILS
@@ -121,6 +122,7 @@ export class TVService extends PlatformService {
         .then(() => this.httpClient.fetchAPI(POWER_API, 'POST', {
           'powerstate': 'On',
         }))
+        .then(() => delay(100)) // wait for HTTP API to digest powerstate change
         .then(() => {
           this.onState.update(true);
           this.notifyDependants();
@@ -308,8 +310,12 @@ export class TVScreenService extends PlatformService {
       .onSet(this.setOn.bind(this));
   }
 
-  override async acknowledge() {
+  override async acknowledge(updatedService: unknown) {
     this.onState.invalidate();
+    if (updatedService instanceof TVService) {
+      const isTVOn = await updatedService.getOn() as boolean;
+      this.onState.update(isTVOn);
+    }
     await this.refreshData();
   }
 
@@ -362,7 +368,7 @@ const AMBILIGHT_CONFIG_API = 'ambilight/currentconfiguration';
 const AMBILIGHT_LOUNGE_LIGHT = 'Lounge light';
 const AMBILIGHT_OFF_STYLE_NAME = 'OFF';
 
-class AmbilightCurrentStyle {
+export class AmbilightCurrentStyle {
   styleName: string = AMBILIGHT_OFF_STYLE_NAME;
   isExpert: boolean = false;
   menuSetting?: string;
@@ -371,7 +377,7 @@ class AmbilightCurrentStyle {
   colorSettings?: AmbilightColorSettings;
 }
 
-class AmbilightColorSettings {
+export class AmbilightColorSettings {
   constructor(
     public readonly color: AmbilightColor,
     public readonly colorDelta: AmbilightColor = new AmbilightColor(0, 0, 0),
@@ -380,15 +386,17 @@ class AmbilightColorSettings {
   ) {}
 }
 
-class AmbilightColor {
+export class AmbilightColor {
   constructor(
     public hue: number, // 0 - 360
     public saturation: number, // 0 - 100
     public brightness: number, // 0 - 255
   ) {}
 }
-  
-const AMBILIGHT_OFF_STYLE = new AmbilightCurrentStyle();
+
+function ambilightOffStyle(): AmbilightCurrentStyle {
+  return new AmbilightCurrentStyle();
+}
 
 export class TVAmbilightService extends PlatformService {
   private service?: Service;
@@ -412,8 +420,20 @@ export class TVAmbilightService extends PlatformService {
     serviceType: typeof Service,
     private readonly wolCaster: WOLCaster,
     configurableAmbilightColors: boolean,
+    private readonly defaultOnStyle?: AmbilightCurrentStyle,
+    private readonly alwaysUseDefaultOn?: boolean,
+    private readonly defaultOffStyle?: AmbilightCurrentStyle,
+    private readonly alwaysUseDefaultOff?: boolean,
   ) {
     super(log, 4000);
+    log.info('The default Ambilight style for screen ON is: %s. Always use? %s', defaultOnStyle?.styleName, alwaysUseDefaultOn);
+    if (defaultOnStyle) {
+      this.lastStyleOn = defaultOnStyle;
+    }
+    log.info('The default Ambilight style for screen OFF is: %s. Always use? %s', defaultOffStyle?.styleName, alwaysUseDefaultOff);
+    if (defaultOffStyle) {
+      this.lastStyleOff = defaultOffStyle;
+    }
 
     if (configurableAmbilightColors) {
       this.configureColors(accessory, characteristic, serviceType);
@@ -450,12 +470,25 @@ export class TVAmbilightService extends PlatformService {
   override async acknowledge(updatedService: unknown) {
     if (updatedService instanceof TVScreenService) {
       this.isScreenOn = await updatedService.getOn() as boolean;
+      if (!this.isTVOn && !this.isScreenOn) {
+        return; // the Ambilight API is very slow and will report "ON" even after the TV is turned off - so we bail out
+      }
     }
-    if (updatedService instanceof TVService) {
-      this.isTVOn = await updatedService.getOn() as boolean;
-    }
+
     this.onState.invalidate();
     this.style.invalidate();
+
+    if (updatedService instanceof TVService) {
+      this.isTVOn = await updatedService.getOn() as boolean;
+      this.isScreenOn = this.isTVOn;
+      if (!this.isTVOn) {
+        this.onState.update(false);
+        this.style.update(ambilightOffStyle());
+        this.service?.updateCharacteristic(this.characteristic.On, false);
+        this.colorfulService?.updateCharacteristic(this.characteristic.On, false);
+        return; // unfortunately Ambilight REST service returns ON for a while after turning OFF (is it because of smooth Ambilight animation?)
+      }
+    }
     await this.refreshData();
   }
 
@@ -472,13 +505,14 @@ export class TVAmbilightService extends PlatformService {
         this.colorfulService.updateCharacteristic(this.characteristic.Saturation, color.saturation);
       }
     } catch (e) {
-      this.log.debug('Cannot fetch screen state, the screen is probably OFF. Error: %s', e);
+      this.log.debug('Cannot fetch Ambilight state, the screen is probably OFF. Error: %s', e);
     }
   }
 
   async getOn(): Promise<CharacteristicValue> {
     const currentStyle = await this.getCurrentStyle();
-    const isActuallyOn = currentStyle.styleName !== AMBILIGHT_OFF_STYLE_NAME;
+
+    const isActuallyOn = currentStyle?.styleName !== AMBILIGHT_OFF_STYLE_NAME;
 
     if (isActuallyOn) {
       this.updateLastStyle(currentStyle);
@@ -522,7 +556,7 @@ export class TVAmbilightService extends PlatformService {
       await this.httpClient.fetchAPI(AMBILIGHT_POWER_API, 'POST', {
         'power': 'Off',
       });
-      await this.setCurrentStyle(AMBILIGHT_OFF_STYLE);
+      await this.setCurrentStyle(ambilightOffStyle());
     }
 
     this.onState.update(shouldBeOn);
@@ -535,10 +569,9 @@ export class TVAmbilightService extends PlatformService {
   async getCurrentStyle(): Promise<AmbilightCurrentStyle> {
     const style = await this.style.getOrUpdate(() =>
       this.httpClient.fetchAPI<AmbilightCurrentStyle>(AMBILIGHT_CONFIG_API).catch(e => {
-        this.log.debug('Ambilight style check fail: %s', e);
-        this.style.bumpExpiration();
-        return this.style.getIfNotExpired() || new AmbilightCurrentStyle();
-      }), new AmbilightCurrentStyle(),
+        this.log.debug('Ambilight style check fail, assuming the TV is OFF: %s', e);
+        return ambilightOffStyle();
+      }), ambilightOffStyle(),
     );
 
     return style;
@@ -606,9 +639,17 @@ export class TVAmbilightService extends PlatformService {
 
   private getLastStyle() {
     if (this.isScreenOn) {
-      return this.lastStyleOn;
+      if (this.alwaysUseDefaultOn && this.defaultOnStyle) {
+        return this.defaultOnStyle;
+      } else {
+        return this.lastStyleOn;
+      }
     } else {
-      return this.lastStyleOff;
+      if (this.alwaysUseDefaultOff && this.defaultOffStyle) {
+        return this.defaultOffStyle;
+      } else {
+        return this.lastStyleOff;
+      }
     }
   }
 }

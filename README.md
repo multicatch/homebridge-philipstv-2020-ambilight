@@ -35,6 +35,7 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                     "name": "Philips TV",
                     "api_url": "https://192.168.1.28:1926/6/",
                     "wol_mac": "F0:A1:B2:C3:D4:E5",
+                    "wol_options": {},
                     "wake_up_delay": 3000,
                     "api_auth": {
                         "username": "ABtvF0czCoW1337",
@@ -53,7 +54,8 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                             "remote_key": "PLAY_PAUSE",
                             "philips_key": "Source"
                         }
-                    ]
+                    ],
+                    "ambilight_options": {}
                 }
             ],
             "platform": "PhilipsTV2020Platform"
@@ -73,7 +75,8 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
 | `custom_color_ambilight` | If true then the color of Ambilight will be configurable |
 | `metadata` | Technical data about your TV (optional) |
 | `key_mapping` | Non-standard mapping for remote keys (optional). `remote_key` is a key from a class RemoteKey. `philips_key` is a key as used in the Philips TV API |
-| `wol_options` | Advanced WOL options (optional) |
+| `wol_options` | Advanced WOL options (optional) - see below |
+| `ambilight_options` | Advanced Ambilight options (optional) - see below |
 
 **Note:** the delay/time unit is *milliseconds*. 30000 means **30 seconds**.
 
@@ -210,6 +213,62 @@ For example, if you wish to remap a `PLAY_PAUSE` button to `Source`, you can add
         }
     ]
 ```
+
+## Advanced Ambilight config
+
+Ambilight by default works this way:
+
+The plugin periodically checks what's the current Ambilight style. When you turn Ambilight OFF, then it will remember the last style you used.
+When you turn Ambilight ON, then it will restore the style.
+
+The plugin actually tracks two Ambilight styles - one when the TV screen is ON, one when the TV screen is OFF. It emulates the actual behavior of the Philips TVs, because the TV uses different styles for screen off and screen on.
+
+The problem is - what **if you almost always disable Ambilight?** When will the plugin have the chance to check what style to use?
+
+Actually, it will never check. And because of that, the Ambilight switch won't work correctly. You can fix that by setting the default styles.
+
+```json
+    "platforms": [ 
+        {
+            "tvs": [
+                {
+                    ...
+                    "ambilight_options": {
+                        "default_on_style": {"styleName":"FOLLOW_VIDEO","isExpert":false,"menuSetting":"GAME","stringValue":"Game"},
+                        "always_use_default_on": false,
+                        "default_off_style": {"styleName":"Lounge light","isExpert":false,"menuSetting":"ISF","stringValue":"Warm White"},
+                        "always_use_default_off": false
+                    }
+                }
+            ],
+            "platform": "PhilipsTV2020Platform"
+        }
+    ]
+```
+
+| Property | Description |
+|-|-|
+| `default_on_style` | This is a default Ambilight style that will be applied when you turn Ambilight ON when the **screen is ON**. | 
+| `always_use_default_on` | When the screen is **ON**: When true, then it will **always set default_on_style** when you turn Ambilight ON. When false, it will apply **last known style** (last one used by the TV). | 
+| `default_off_style` | This is a default Ambilight style that will be applied when you turn Ambilight ON when the **screen is OFF**. |
+| `coualways_use_default_off` | When the screen is **OFF**: When true, then it will **always set default_off_style** when you turn Ambilight ON. When false, it will apply **last known style** (last one used by the TV). |
+
+`default_on_style` and `default_off_style` is used when the plugin does not know what style to apply when turning the Ambilight ON. 
+
+The plugin automatically tracks Ambilight style changes and knows what is the current Ambilight style BUT sometimes it is not able to (for example: the Ambilight is OFF and it was never ON). These defaults are here as a failsafe.
+
+**How to get the Ambilight style JSON?**
+
+1. Setup the plugin.
+2. Turn **Homebridge Debug -D** mode on.
+3. Turn the TV on and set the Ambilight style you want using the TV remote.
+4. Go to Homebridge logs and find `/ambilight/currentconfiguration` TV response -- here's the JSON!
+
+Example:
+```
+[5/22/2025, 5:42:45 PM] [homebridge-philipstv-2020-ambilight] [Philips TV] [GET https://192.168.68.54:1926/6/ambilight/currentconfiguration] Response from TV {"styleName":"FOLLOW_VIDEO","isExpert":false,"menuSetting":"GAME","stringValue":"Game"}
+```
+
 
 ## Advanced Wake On LAN (WOL) config
 

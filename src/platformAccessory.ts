@@ -1,7 +1,7 @@
 import { Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
 import { HttpClient, WOLCaster } from './protocol.js';
-import { Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
+import { AmbilightCurrentStyle, Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
 import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 import { Log } from './logger.js';
 import { Options } from 'wakeonlan';
@@ -18,6 +18,7 @@ interface PhilipsTVConfig {
   metadata?: PhilipsTVMetadata,
   custom_color_ambilight?: boolean,
   key_mapping?: KeyMapping[],
+  ambilight_options?: AmbilightOptions,
 }
 
 interface KeyMapping {
@@ -34,6 +35,13 @@ interface PhilipsTVMetadata {
   model?: string;
   manufacturer?: string;
   serialNumber?: string;
+}
+
+interface AmbilightOptions {
+  default_on_style?: AmbilightCurrentStyle;
+  always_use_default_on?: boolean;
+  default_off_style?: AmbilightCurrentStyle;
+  always_use_default_off?: boolean;
 }
 
 /**
@@ -73,7 +81,10 @@ export class PhilipsTVAccessory {
     this.refreshables.push(tvScreen);
 
     const ambilightWithColors = config.custom_color_ambilight || false;
-    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType, this.wolCaster, ambilightWithColors);
+    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType, this.wolCaster, ambilightWithColors, 
+      config.ambilight_options?.default_on_style, config.ambilight_options?.always_use_default_on || false,
+      config.ambilight_options?.default_off_style, config.ambilight_options?.always_use_default_off || false,
+    );
     tvService.addDependant(ambilight);
     tvScreen.addDependant(ambilight);
     this.refreshables.push(ambilight);
