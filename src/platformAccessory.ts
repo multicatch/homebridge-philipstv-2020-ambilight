@@ -1,4 +1,4 @@
-import { Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
+import { API, Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
 import { HttpClient, WOLCaster } from './protocol.js';
 import { AmbilightCurrentStyle, Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
@@ -7,7 +7,7 @@ import { Log } from './logger.js';
 import { Options } from 'wakeonlan';
 
 interface PhilipsTVConfig {
-  name?: string;
+  name: string;
   api_url: string;
   wol_mac?: string,
   wol_options?: Options,
@@ -16,9 +16,17 @@ interface PhilipsTVConfig {
   api_timeout?: number,
   auto_update_interval?: number,
   metadata?: PhilipsTVMetadata,
-  custom_color_ambilight?: boolean,
   key_mapping?: KeyMapping[],
+  ambilight_mode?: AmbilightMode,
   ambilight_options?: AmbilightOptions,
+  ungroup_accessories?: boolean,
+  screen_switch?: boolean,
+}
+
+export enum AmbilightMode {
+  Disabled = 'disabled',
+  OnOff = 'on_off',
+  Colorful = 'colorful',
 }
 
 interface KeyMapping {
@@ -55,8 +63,11 @@ export class PhilipsTVAccessory {
   private httpClient: HttpClient;
   private wolCaster: WOLCaster;
 
+  private readonly accessory: PlatformAccessory;
+  private readonly accessories: PlatformAccessory[] = [];
+
   constructor(
-    private readonly accessory: PlatformAccessory,
+    api: API,
     logger: Logger,
     private readonly characteristic: typeof Characteristic,
     private readonly serviceType: typeof Service,
@@ -67,28 +78,22 @@ export class PhilipsTVAccessory {
     this.httpClient = new HttpClient(config, this.log);
     this.wolCaster = new WOLCaster(this.log, config.wol_mac, config.wake_up_delay, config.wol_options);
 
+    this.accessory = new api.platformAccessory(config.name, PhilipsTVAccessory.tvUUID(api, config));
+    this.accessory.context.device = config;
+
     this.accessory.category = Categories.TELEVISION;
+    this.accessories.push(this.accessory);
 
     const keyMapping = this.prepareRemoteKeyMapping(config.key_mapping);
-    const tvService = new TVService(accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType, keyMapping);
+    const tvService = new TVService(this.accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType, keyMapping);
     this.refreshables.push(tvService);
-
-    const speakerService = new TVSpeakerService(accessory, this.log, this.httpClient, characteristic, serviceType);
+    
+    const speakerService = new TVSpeakerService(this.accessory, this.log, this.httpClient, characteristic, serviceType);
     this.refreshables.push(speakerService);
-
-    const tvScreen = new TVScreenService(accessory, this.log, this.httpClient, characteristic, serviceType);
-    tvService.addDependant(tvScreen);
-    this.refreshables.push(tvScreen);
-
-    const ambilightWithColors = config.custom_color_ambilight || false;
-    const ambilight = new TVAmbilightService(accessory, this.log, this.httpClient, characteristic, serviceType, this.wolCaster, ambilightWithColors, 
-      config.ambilight_options?.default_on_style, config.ambilight_options?.always_use_default_on || false,
-      config.ambilight_options?.default_off_style, config.ambilight_options?.always_use_default_off || false,
-    );
-    tvService.addDependant(ambilight);
-    tvScreen.addDependant(ambilight);
-    this.refreshables.push(ambilight);
-
+    
+    const tvScreen = this.setupTVScreen(api, this.accessory, characteristic, serviceType, tvService, config);
+    this.setupAmbilight(api, this.accessory, characteristic, serviceType, tvService, tvScreen, config);
+    
     const metadata = config.metadata;
     this.accessory.getService(serviceType.AccessoryInformation)!
       .setCharacteristic(characteristic.Name, config.name || 'Philips TV')
@@ -96,6 +101,90 @@ export class PhilipsTVAccessory {
       .setCharacteristic(characteristic.Model, metadata?.model || 'Generic TV')
       .setCharacteristic(characteristic.SerialNumber, metadata?.serialNumber || config.wol_mac || 'Default-Serial');
 
+    this.configureAutoUpdate(config);
+  }
+
+  static allUUIDs(api: API, config: PhilipsTVConfig): string[] {
+    return [
+      this.tvUUID(api, config),
+      this.tvScreenUUID(api, config),
+      this.ambilightUUID(api, config),
+    ];
+  }
+
+  static tvUUID(api: API, config: PhilipsTVConfig): string {
+    return api.hap.uuid.generate(config.api_url);
+  }
+  
+  static tvScreenUUID(api: API, config: PhilipsTVConfig): string {
+    return api.hap.uuid.generate(this.tvUUID(api, config) + '_tvscreeen');
+  }
+
+  static ambilightUUID(api: API, config: PhilipsTVConfig): string {
+    return api.hap.uuid.generate(this.tvUUID(api, config) + '_ambilight');
+  }
+
+  getAccessories(): PlatformAccessory[] {
+    return this.accessories;
+  }
+
+  private setupTVScreen(api: API, accessory: PlatformAccessory, 
+    characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+    tvService: TVService, 
+    config: PhilipsTVConfig,
+  ): TVScreenService {
+    const ungroupAccessories = config.ungroup_accessories === true;
+    const showSwitch = config.screen_switch ?? true;
+    let tvScreenAccessory: PlatformAccessory;
+    if (ungroupAccessories && showSwitch) {
+      tvScreenAccessory = new api.platformAccessory(accessory.displayName + ' Screen', PhilipsTVAccessory.tvScreenUUID(api, config));
+      tvScreenAccessory.category = Categories.SWITCH;
+      this.accessories.push(tvScreenAccessory);
+    } else {
+      tvScreenAccessory = accessory;
+    }
+    const tvScreen = new TVScreenService(tvScreenAccessory, this.log, this.httpClient, characteristic, serviceType, showSwitch);
+    tvService.addDependant(tvScreen);
+    this.refreshables.push(tvScreen);
+
+    return tvScreen;
+  }
+
+  private setupAmbilight(api: API, 
+    accessory: PlatformAccessory, 
+    characteristic: typeof Characteristic, 
+    serviceType: typeof Service, 
+    tvService: TVService, 
+    tvScreen: TVScreenService, 
+    config: PhilipsTVConfig,
+  ) {
+    this.log.info('Ambilight mode: %s', config.ambilight_mode);
+    if (config.ambilight_mode === AmbilightMode.Disabled) {
+      return;
+    }
+
+    const ungroupAccessories = config.ungroup_accessories === true;
+    let ambilightAccessory: PlatformAccessory;
+    if (ungroupAccessories) {
+      ambilightAccessory = new api.platformAccessory(accessory.displayName + ' Ambilight', PhilipsTVAccessory.ambilightUUID(api, config));
+      ambilightAccessory.category = Categories.LIGHTBULB;
+      this.accessories.push(ambilightAccessory);
+    } else {
+      ambilightAccessory = accessory;
+    }
+    const ambilightWithColors = config.ambilight_mode === AmbilightMode.Colorful;
+    const ambilight = new TVAmbilightService(ambilightAccessory, this.log, this.httpClient, characteristic, serviceType, this.wolCaster, ambilightWithColors, 
+      config.ambilight_options?.default_on_style, config.ambilight_options?.always_use_default_on === true,
+      config.ambilight_options?.default_off_style, config.ambilight_options?.always_use_default_off === true,
+    );
+    tvService.addDependant(ambilight);
+    tvScreen.addDependant(ambilight);
+    this.refreshables.push(ambilight);
+    return ambilight;
+  }
+
+  private configureAutoUpdate(config: PhilipsTVConfig) {
     this.refreshData = this.refreshData.bind(this);
     this.refreshData();
     const update_interval = config.auto_update_interval || 0;

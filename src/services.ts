@@ -291,7 +291,7 @@ export class TVSpeakerService extends PlatformService {
 const SCREEN_API = 'screenstate';
 
 export class TVScreenService extends PlatformService {
-  private service: Service;
+  private service?: Service;
   private onState = new StateCache<boolean>();
 
   constructor(
@@ -300,14 +300,17 @@ export class TVScreenService extends PlatformService {
     private readonly httpClient: HttpClient,
     private readonly characteristic: typeof Characteristic,
     serviceType: typeof Service,
+    show_switch: boolean,
   ) {
     super(log);
 
-    this.service = accessory.addService(serviceType.Switch, 'TV Screen', 'tvscreen');
-    this.service.setCharacteristic(characteristic.Name, 'Screen');
-    this.service.getCharacteristic(characteristic.On)
-      .onGet(this.getOn.bind(this))
-      .onSet(this.setOn.bind(this));
+    if (show_switch) {
+      this.service = accessory.addService(serviceType.Switch, 'TV Screen', 'tvscreen');
+      this.service.setCharacteristic(characteristic.Name, 'Screen');
+      this.service.getCharacteristic(characteristic.On)
+        .onGet(this.getOn.bind(this))
+        .onSet(this.setOn.bind(this));
+    }
   }
 
   override async acknowledge(updatedService: unknown) {
@@ -322,7 +325,7 @@ export class TVScreenService extends PlatformService {
   async refreshData() {
     try {
       const isOn = await this.getOn();
-      this.service.updateCharacteristic(this.characteristic.On, isOn);
+      this.service?.updateCharacteristic(this.characteristic.On, isOn);
     } catch (e) {
       this.log.debug('Cannot fetch screen state, the screen is probably OFF. Error: %s', e);
     }

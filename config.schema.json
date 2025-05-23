@@ -122,12 +122,6 @@
               "required": false,
               "default": "30000"
             },
-            "custom_color_ambilight": {
-              "title": "Configurable custom color with Ambilight",
-              "description": "Whether you want to configure Ambilight color in HomeKit",
-              "type": "boolean",
-              "default": false
-            },
             "metadata": {
               "title": "TV metadata",
               "description": "Metadata shown in device details, optional.",
@@ -187,6 +181,32 @@
                   }
                 }
               }
+            },
+            "ambilight_mode": {
+              "title": "Ambilight mode",
+              "description": "This option controls how to set up Ambilight \"light bulb\" in HomeKit",
+              "type": "string",
+              "default": "on_off",
+              "oneOf": [
+                {
+                  "enum": [
+                    "disabled"
+                  ],
+                  "title": "Disabled (no Ambilight control)"
+                },
+                {
+                  "enum": [
+                    "on_off"
+                  ],
+                  "title": "Simple on/off (with styles specified in options)"
+                },
+                {
+                  "enum": [
+                    "colorful"
+                  ],
+                  "title": "Color customization"
+                }
+              ]
             },
             "ambilight_options": {
               "title": "Ambilight options",
@@ -375,6 +395,16 @@
                   "default": false
                 }
               }
+            },
+            "ungroup_accessories": {
+              "title": "Show separate accessories instead of 1 TV with sub-accessories (ungroup)",
+              "type": "boolean",
+              "default": false
+            },
+            "screen_switch": {
+              "title": "Show a switch for TV Screen",
+              "type": "boolean",
+              "default": true
             }
           }
         }

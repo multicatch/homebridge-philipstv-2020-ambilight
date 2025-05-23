@@ -72,17 +72,19 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
 | `api_auth` | Credentials for the API (see next section) |
 | `api_timeout` | Maximum time the plugin will wait for your TV to respond (keep it below 5s) |
 | `auto_update_interval` | Interval of background status checks (this is a check whether your TV is on, it will update the status in Homekit) |
-| `custom_color_ambilight` | If true then the color of Ambilight will be configurable |
 | `metadata` | Technical data about your TV (optional) |
 | `key_mapping` | Non-standard mapping for remote keys (optional). `remote_key` is a key from a class RemoteKey. `philips_key` is a key as used in the Philips TV API |
 | `wol_options` | Advanced WOL options (optional) - see below |
+| `ambilight_mode` | How the Ambilight switch should be shown in the HomeKit: `disabled`, `on_off`, `colorful`. Disabled completely disables Ambilight switch, on_off is a simple switch, and colorful registers Ambilight as a lightbulb with color customization. |
 | `ambilight_options` | Advanced Ambilight options (optional) - see below |
+| `ungroup_accessories` | If true, then HomeKit will see 3 accessories (TV, Screen and Ambilight) instead of 1 (TV with sub-accessories). Each of the accessories needs to be added separately to HomeKit |
+| `screen_switch` | Show a dedicated switch for TV Screen (useful for OLEDs - you can turn off the screen without turning off the TV to prevent burn-in). |
 
 **Note:** the delay/time unit is *milliseconds*. 30000 means **30 seconds**.
 
-## Credentials for 2016 (and newer?) models with Android TV
+## Credentials for 2016 (and newer) models with Android TV
 
-As per [this project](https://github.com/suborb/philips_android_tv) the Android TV 2016 models Philips use an authenticated HTTPS [JointSpace](http://jointspace.sourceforge.net/) API version 6.
+As per [this project](https://github.com/suborb/philips_android_tv) the Android TV 2016-2021 models Philips use an authenticated HTTPS [JointSpace](http://jointspace.sourceforge.net/) API version 6.
 Every control- or status-call needs [digest authentification](https://en.wikipedia.org/wiki/Digest_access_authentication) which contains of a pre generated username and password. You have to do this once for your TV. We recommend to use the python script [philips\_android\_tv](https://github.com/suborb/philips_android_tv).
 
 Here is an example pairing call for philips\_android\_tv :
@@ -115,7 +117,6 @@ You can then add username and password key in your homebridge config, example:
     ]
 ]
  ```
-
 
 
 ## RemoteKey and Philips Key
