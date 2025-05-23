@@ -185,6 +185,7 @@
             "ambilight_mode": {
               "title": "Ambilight mode",
               "description": "This option controls how to set up Ambilight \"light bulb\" in HomeKit",
+              "required": true, 
               "type": "string",
               "default": "on_off",
               "oneOf": [

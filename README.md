@@ -43,7 +43,6 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                     },
                     "api_timeout": 3000,
                     "auto_update_interval": 30000,
-                    "custom_color_ambilight": true,
                     "metadata": {
                         "model": "55OLED705/12",
                         "manufacturer": "Philips",
@@ -55,7 +54,10 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                             "philips_key": "Source"
                         }
                     ],
-                    "ambilight_options": {}
+                    "ambilight_mode": "on_off",
+                    "ambilight_options": {},
+                    "ungroup_accessories": false,
+                    "screen_switch": true
                 }
             ],
             "platform": "PhilipsTV2020Platform"
