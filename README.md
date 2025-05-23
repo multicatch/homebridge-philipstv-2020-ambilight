@@ -215,6 +215,8 @@ For example, if you wish to remap a `PLAY_PAUSE` button to `Source`, you can add
     ]
 ```
 
+After adding this config, the Play/Pause button in the iOS remote will actually trigger "Source" instead of the default button.
+
 ## Advanced Ambilight config
 
 Ambilight by default works this way:
