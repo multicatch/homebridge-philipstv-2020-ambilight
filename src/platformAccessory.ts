@@ -2,7 +2,6 @@ import { API, Categories, Characteristic, Logger, type PlatformAccessory, type S
 
 import { HttpClient, WOLCaster } from './protocol.js';
 import { AmbilightCurrentStyle, Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
-import { RemoteKey } from 'hap-nodejs/dist/lib/definitions/CharacteristicDefinitions.js';
 import { Log } from './logger.js';
 import { Options } from 'wakeonlan';
 
@@ -221,22 +220,22 @@ export class PhilipsTVAccessory {
 
   prepareRemoteKeyMapping(mappings?: KeyMapping[]): Map<number, string> {
     const result = new Map<number, string>();
-    result.set(RemoteKey.PLAY_PAUSE, 'PlayPause');
-    result.set(RemoteKey.BACK, 'Back');
-    result.set(RemoteKey.ARROW_UP, 'CursorUp');
-    result.set(RemoteKey.ARROW_DOWN, 'CursorDown');
-    result.set(RemoteKey.ARROW_LEFT, 'CursorLeft');
-    result.set(RemoteKey.ARROW_RIGHT, 'CursorRight');
-    result.set(RemoteKey.SELECT, 'Confirm');
-    result.set(RemoteKey.EXIT, 'Exit');
-    result.set(RemoteKey.INFORMATION, 'Info');
+    result.set(this.characteristic.RemoteKey.PLAY_PAUSE, 'PlayPause');
+    result.set(this.characteristic.RemoteKey.BACK, 'Back');
+    result.set(this.characteristic.RemoteKey.ARROW_UP, 'CursorUp');
+    result.set(this.characteristic.RemoteKey.ARROW_DOWN, 'CursorDown');
+    result.set(this.characteristic.RemoteKey.ARROW_LEFT, 'CursorLeft');
+    result.set(this.characteristic.RemoteKey.ARROW_RIGHT, 'CursorRight');
+    result.set(this.characteristic.RemoteKey.SELECT, 'Confirm');
+    result.set(this.characteristic.RemoteKey.EXIT, 'Exit');
+    result.set(this.characteristic.RemoteKey.INFORMATION, 'Info');
     if (mappings === undefined) {
       return result;
     }
 
-    type RemoteKeyName = keyof typeof RemoteKey;
+    type RemoteKeyName = keyof typeof this.characteristic.RemoteKey;
     for (const mapping of mappings) {
-      const mappedKey = RemoteKey[mapping.remote_key as RemoteKeyName];
+      const mappedKey = this.characteristic.RemoteKey[mapping.remote_key as RemoteKeyName];
       if (!mappedKey || typeof mappedKey !== 'number') {
         this.log.error('RemoteKey from key_mapping is invalid: %s', mapping.remote_key);
       } else {
