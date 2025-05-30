@@ -69,4 +69,8 @@ export class StateCache<T> {
       return undefined;
     }
   }
+
+  getStale(): T | undefined {
+    return this.state;
+  }
 }
