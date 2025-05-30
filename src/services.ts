@@ -3,7 +3,6 @@ import { HttpClient, WOLCaster } from './protocol';
 import { StateCache } from './cacheable.js';
 import { Log } from './logger';
 import { delay } from './util.js';
-import { del } from 'request';
 
 /**
  * UTILS
