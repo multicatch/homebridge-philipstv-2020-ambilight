@@ -52,10 +52,46 @@ export abstract class PlatformService implements Refreshable {
 const POWER_API = 'powerstate';
 const KEY_API = 'input/key';
 
+export interface TVActivity {
+  name: string,
+  launch?: TVActionLaunch,
+  channel?: string,
+}
+
+const DEFAULT_ACTION = 'android.intent.action.MAIN';
+
+export interface TVActionLaunch {
+  intent: TVIntent,
+  action?: string,
+}
+
+export interface TVIntent {
+  component: TVApp,
+}
+
+export interface TVApp {
+  packageName: string,
+  className: string
+}
+
+export interface TVChannelActivity {
+  channel?: TVChannel;
+}
+
+export interface TVChannel {
+  preset?: string;
+}
+
+const DEFAULT_APP: TVApp = {
+  packageName: 'org.droidtv.playtv',
+  className: 'org.droidtv.playtv.PlayTvActivity',
+};
+
 export class TVService extends PlatformService {
   private service: Service;
 
   private onState = new StateCache<boolean>();
+  private activity = new StateCache<TVApp>();
 
   constructor(
         private readonly accessory: PlatformAccessory,
@@ -65,6 +101,8 @@ export class TVService extends PlatformService {
         private readonly characteristic: typeof Characteristic,
         serviceType: typeof Service,
         private readonly keyMapping: Map<number, string>,
+        private readonly inputs?: TVActivity[],
+        defaultInput?: string,
   ) {
     super(log, 1500);
     this.service = this.accessory.getService(serviceType.Television) || this.accessory.addService(serviceType.Television);
@@ -75,6 +113,31 @@ export class TVService extends PlatformService {
 
     this.service.getCharacteristic(characteristic.RemoteKey)
       .onSet(this.sendKey.bind(this));
+
+    if (inputs && inputs.length > 0) {
+      log.info('Enabling ActiveIdentifier (%s inputs)', inputs.length);
+      this.service.getCharacteristic(characteristic.ActiveIdentifier)
+        .onSet(this.setActiveIdentifier.bind(this))
+        .onGet(this.getActiveIdentifier.bind(this));
+
+      this.service.addLinkedService(
+        this.accessory.addService(serviceType.InputSource, defaultInput ?? 'Unknown', 'input-default')
+          .setCharacteristic(characteristic.Identifier, 0)
+          .setCharacteristic(characteristic.ConfiguredName, defaultInput ?? 'Unknown')
+          .setCharacteristic(characteristic.IsConfigured, characteristic.IsConfigured.CONFIGURED)
+          .setCharacteristic(characteristic.InputSourceType, characteristic.InputSourceType.HOME_SCREEN),
+      );
+      for (let i = 0; i < inputs.length; i++) {
+        const input = inputs[i];
+        const inputService = this.accessory.addService(serviceType.InputSource, input.name, 'input-' + i);
+        inputService
+          .setCharacteristic(characteristic.Identifier, i + 1)
+          .setCharacteristic(characteristic.ConfiguredName, input.name)
+          .setCharacteristic(characteristic.IsConfigured, characteristic.IsConfigured.CONFIGURED)
+          .setCharacteristic(characteristic.InputSourceType, input.channel ? characteristic.InputSourceType.OTHER : characteristic.InputSourceType.APPLICATION);
+        this.service.addLinkedService(inputService);
+      }
+    }
   }
 
   async refreshData()  {
@@ -86,6 +149,7 @@ export class TVService extends PlatformService {
           if (isOn !== wasOn) {
             this.notifyDependants();
           }
+          return isOn;
         });
     } catch (e) {
       this.log.debug('Cannot update activity status. Error: %s', e);
@@ -99,7 +163,6 @@ export class TVService extends PlatformService {
           const resp = data as Record<string, string>;
           return resp.powerstate === 'On';
         }).catch(e => {
-          this.log.info('Cannot fetch TV power status, is it off?');
           this.log.debug('Error fetching TV status: %s', e);
           return false;
         }), false,
@@ -152,6 +215,97 @@ export class TVService extends PlatformService {
     });
   }
 
+  async setActiveIdentifier(newState: CharacteristicValue) {
+    if (!this.inputs) {
+      this.log.debug('ActiveIdentifier disabled, but I received a request to change it to %s', newState);
+      return;
+    }
+
+    const i = newState as number - 1;
+    if (i >= this.inputs.length) {
+      this.log.error('Invalid ActiveIdentifier: %s', i);
+      return;
+    }
+    if (i < 0) {
+      return;
+    }
+    const action = this.inputs[i];
+    if (!action) {
+      return;
+    }
+
+    if (action.channel) {
+      await this.sendKeyRaw('WatchTV');
+      for (const digit of (action.channel + '').split('')) {
+        await this.sendKey('Digit' + digit);
+      }
+      await this.sendKey('Confirm');
+    } else if (action.launch) {
+      await this.launch(action.launch);
+    }
+  }
+
+  async launch(app: TVActionLaunch) {
+    if (!app.action) {
+      app.action = DEFAULT_ACTION;
+    }
+    await this.httpClient.fetchAPI('activities/launch', 'POST', app);
+  }
+
+  async getActiveIdentifier(): Promise<CharacteristicValue> {
+    if (!this.inputs) {
+      return 0;
+    }
+
+    const isOn = this.onState.getIfNotExpired();
+    if (isOn === null || this.onState.getIfNotExpired() === false) {
+      return 0;
+    }
+
+    const currentApp = await this.getRunningApp();
+    let currentChannel = null;
+    if (currentApp.packageName === 'org.droidtv.channels' || currentApp.packageName === 'org.droidtv.playtv') {
+      currentChannel = await this.getChannel();
+    }
+
+    for (let i = 0; i < this.inputs.length; i++) {
+      const entry = this.inputs[i];
+
+      let matches = false;
+      if (currentChannel !== null && currentChannel !== undefined) {
+        matches = entry.channel === currentChannel;
+      } else if (entry.launch) {
+        const component = entry.launch.intent.component;
+        matches = component.packageName === currentApp.packageName && component.className === currentApp.className;
+      }
+
+      if (matches) {
+        return i + 1;
+      }
+    }
+    return 0;
+  }
+
+  async getChannel(): Promise<string | null> {
+    return await this.httpClient.fetchAPI<TVChannelActivity>('activities/tv')
+      .then(data => {
+        return data.channel?.preset ?? null;
+      })
+      .catch(e => {
+        this.log.debug('Cannot parse channel: %s', e);
+        return null;
+      });
+  }
+
+  async getRunningApp(): Promise<TVApp> {
+    return await this.activity.getOrUpdate(() => 
+      this.httpClient.fetchAPI('activities/current')
+        .then(data => {
+          const resp = data as TVIntent;
+          return resp.component;
+        })
+    , DEFAULT_APP);
+  }
 }
 
 

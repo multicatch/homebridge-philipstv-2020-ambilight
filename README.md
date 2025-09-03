@@ -81,6 +81,8 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
 | `ambilight_options` | Advanced Ambilight options (optional) - see below |
 | `ungroup_accessories` | If true, then HomeKit will see 3 accessories (TV, Screen and Ambilight) instead of 1 (TV with sub-accessories). Each of the accessories needs to be added separately to HomeKit |
 | `screen_switch` | Show a dedicated switch for TV Screen (useful for OLEDs - you can turn off the screen without turning off the TV to prevent burn-in). |
+| `default_input` | If using `inputs`: This is the name of an input that will be used when the TV is off or in unknown state. |
+| `inputs` | An array of apps or channels you wish to see in HomeKit. |
 
 **Note:** the delay/time unit is *milliseconds*. 30000 means **30 seconds**.
 
@@ -274,6 +276,66 @@ Example:
 [5/22/2025, 5:42:45 PM] [homebridge-philipstv-2020-ambilight] [Philips TV] [GET https://192.168.68.54:1926/6/ambilight/currentconfiguration] Response from TV {"styleName":"FOLLOW_VIDEO","isExpert":false,"menuSetting":"GAME","stringValue":"Game"}
 ```
 
+## Inputs (apps and channels)
+
+This setting allows you to see currently opened app and change apps from the HomeKit screen.
+
+You need to configure which inputs you want to see in HomeKit. 
+For example, if you want to launch Kodi, YouTube, Netflix and Channel 4, you may use the following configuration:
+
+```json
+
+                    "default_input": "Unknown",
+                    "inputs": [
+                        {
+                            "name": "YouTube",
+                            "launch": {
+                                "intent": {
+                                    "component": {
+                                        "packageName": "com.google.android.youtube.tv",
+                                        "className": "com.google.android.apps.youtube.tv.activity.ShellActivity"
+                                    },
+                                    "action": "android.intent.action.MAIN"
+                                }
+                            }
+                        },
+                        {
+                            "name": "Netflix",
+                            "launch": {
+                                "intent": {
+                                    "component": {
+                                        "packageName": "com.netflix.ninja",
+                                        "className": "com.netflix.ninja.MainActivity"
+                                    },
+                                }
+                            }
+                        },
+                        {
+                            "name": "Kodi",
+                            "launch": {
+                                "intent": {
+                                    "component": {
+                                        "packageName": "org.xbmc.kodi",
+                                        "className": "org.xbmc.kodi.Splash"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "name": "Channel 5",
+                            "channel": "5"
+                        }
+                    ]
+```
+
+For all inputs, `name` is mandatory.
+
+If you want to launch an app, then you need to configure `launch` section. In this section, `action` is optional (if you don't specify this field, then the plugin will use `"android.intent.action.MAIN"` by default).
+
+Alternatively, you may also configure you favorite channels. To do so, don't use `launch`, but instead - `channel`.
+
+Sometimes, you will launch an app or switch to a channel that is not on this list. In those cases, the plugin will need to switch to a default option. 
+You can customize the name of this option by specifying `default_input`.
 
 ## Advanced Wake On LAN (WOL) config
 

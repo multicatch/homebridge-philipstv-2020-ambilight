@@ -1,25 +1,27 @@
 import { API, Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
 import { HttpClient, WOLCaster } from './protocol.js';
-import { AmbilightCurrentStyle, Refreshable, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
+import { AmbilightCurrentStyle, Refreshable, TVActivity, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
 import { Log } from './logger.js';
 import { Options } from 'wakeonlan';
 
 interface PhilipsTVConfig {
   name: string;
   api_url: string;
-  wol_mac?: string,
-  wol_options?: Options,
-  wake_up_delay?: number,
-  api_auth?: PhilipsApiAuth,
-  api_timeout?: number,
-  auto_update_interval?: number,
-  metadata?: PhilipsTVMetadata,
-  key_mapping?: KeyMapping[],
-  ambilight_mode?: AmbilightMode,
-  ambilight_options?: AmbilightOptions,
-  ungroup_accessories?: boolean,
-  screen_switch?: boolean,
+  wol_mac?: string;
+  wol_options?: Options;
+  wake_up_delay?: number;
+  api_auth?: PhilipsApiAuth;
+  api_timeout?: number;
+  auto_update_interval?: number
+  metadata?: PhilipsTVMetadata;
+  key_mapping?: KeyMapping[];
+  ambilight_mode?: AmbilightMode;
+  ambilight_options?: AmbilightOptions;
+  ungroup_accessories?: boolean;
+  screen_switch?: boolean;
+  inputs?: TVActivity[];
+  default_input?: string;
 }
 
 export enum AmbilightMode {
@@ -84,7 +86,10 @@ export class PhilipsTVAccessory {
     this.accessories.push(this.accessory);
 
     const keyMapping = this.prepareRemoteKeyMapping(config.key_mapping);
-    const tvService = new TVService(this.accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType, keyMapping);
+    
+    const tvService = new TVService(
+      this.accessory, this.log, this.httpClient, this.wolCaster, characteristic, serviceType, keyMapping, config.inputs, config.default_input,
+    );
     this.refreshables.push(tvService);
     
     const speakerService = new TVSpeakerService(this.accessory, this.log, this.httpClient, characteristic, serviceType);

@@ -406,6 +406,59 @@
               "title": "Show a switch for TV Screen",
               "type": "boolean",
               "default": true
+            },
+            "default_input": {
+              "title": "Name of default input (actual input is not on the list)",
+              "type": "string",
+              "required": false
+            },
+            "inputs": {
+              "title": "Inputs/apps (optional)",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Input/app name",
+                    "type": "string",
+                    "required": true
+                  },
+                  "launch": {
+                    "type": "object",
+                    "required": false,
+                    "properties": {
+                      "intent": {
+                        "type": "object",
+                        "properties": {
+                          "component": {
+                            "type": "object",
+                            "properties": {
+                              "packageName": {
+                                "type": "string",
+                                "required": false
+                              },
+                              "className": {
+                                "type": "string",
+                                "required": false
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "action": {
+                        "type": "string",
+                        "required": false,
+                        "default": "android.intent.action.MAIN"
+                      }
+                    }
+                  },
+                  "channel": {
+                    "title": "Channel",
+                    "type": "string",
+                    "required": false
+                  }
+                }
+              }
             }
           }
         }
