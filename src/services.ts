@@ -258,7 +258,7 @@ export class TVService extends PlatformService {
     }
 
     const isOn = this.onState.getIfNotExpired();
-    if (isOn === null || this.onState.getIfNotExpired() === false) {
+    if (isOn === null || isOn === false) {
       return 0;
     }
 
