@@ -90,6 +90,7 @@ const DEFAULT_APP: TVApp = {
 export class TVService extends PlatformService {
   private service: Service;
 
+  private alternatingPlayPauseState = false;
   private onState = new StateCache<boolean>();
   private activity = new StateCache<TVApp>();
 
@@ -206,7 +207,16 @@ export class TVService extends PlatformService {
       this.log.info('Unknown key pressed: %s', keyValue);
       return;
     }
-    await this.sendKeyRaw(rawKey);
+    if (rawKey === 'AlternatingPlayPause') {
+      let playPauseKey = 'Play';
+      if (!this.alternatingPlayPauseState) {
+        playPauseKey = 'Pause';
+      }
+      this.alternatingPlayPauseState = !this.alternatingPlayPauseState;
+      await this.sendKeyRaw(playPauseKey);
+    } else {
+      await this.sendKeyRaw(rawKey);
+    }
   }
 
   async sendKeyRaw(value: string) {

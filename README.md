@@ -221,6 +221,37 @@ For example, if you wish to remap a `PLAY_PAUSE` button to `Source`, you can add
 
 After adding this config, the Play/Pause button in the iOS remote will actually trigger "Source" instead of the default button.
 
+### Alternating PlayPause
+
+Some apps don't respond well to `PlayPause` (it works just as plain `Play` or `Pause`). It unfortunately means that this button will be half-usable in some cases.
+
+This plugin allows you to use a special `AlternatingPlayPause` mapping, which will send alternating `Play` or `Pause` instead of `PlayPause`.
+This fixes it issue (but on the other hand, you will sometimes need to click it twice).
+
+`AlternatingPlayPause` works like this: 1st click - Play, 2nd click - Pause, 3rd - Play, 4th - Pause, 5th - Play, etc.
+
+To enable it, add the following mapping:
+
+```json
+    "platforms": [ 
+        {
+            "tvs": [
+                {
+                    ...
+                    "key_mapping": [
+                        { 
+                            "remote_key": "PLAY_PAUSE",
+                            "philips_key": "AlternatingPlayPause"
+                        }
+                    ]
+                }
+            ],
+            "platform": "PhilipsTV2020Platform"
+        }
+    ]
+```
+
+
 ## Advanced Ambilight config
 
 Ambilight by default works this way:
