@@ -280,7 +280,7 @@ Example:
 
 This setting allows you to see currently opened app and change apps from the HomeKit screen.
 
-![TV in HomeKit with inputs](./doc/inputs.jpeg)
+![TV in HomeKit with inputs](./doc/inputs.jpg)
 
 You need to configure which inputs you want to see in HomeKit. 
 For example, if you want to launch Kodi, YouTube, SmartTube, Netflix and Channel 5, you may use the following configuration:
