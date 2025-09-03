@@ -280,8 +280,10 @@ Example:
 
 This setting allows you to see currently opened app and change apps from the HomeKit screen.
 
+![TV in HomeKit with inputs](./doc/inputs.jpeg)
+
 You need to configure which inputs you want to see in HomeKit. 
-For example, if you want to launch Kodi, YouTube, Netflix and Channel 4, you may use the following configuration:
+For example, if you want to launch Kodi, YouTube, SmartTube, Netflix and Channel 5, you may use the following configuration:
 
 ```json
 
@@ -294,6 +296,18 @@ For example, if you want to launch Kodi, YouTube, Netflix and Channel 4, you may
                                     "component": {
                                         "packageName": "com.google.android.youtube.tv",
                                         "className": "com.google.android.apps.youtube.tv.activity.ShellActivity"
+                                    },
+                                    "action": "android.intent.action.MAIN"
+                                }
+                            }
+                        },
+                        {
+                            "name": "SmartTube",
+                            "launch": {
+                                "intent": {
+                                    "component": {
+                                        "packageName": "com.teamsmart.videomanager.tv",
+                                        "className": "com.liskovsoft.smartyoutubetv2.tv.ui.main.SplashActivity"
                                     },
                                     "action": "android.intent.action.MAIN"
                                 }
@@ -336,6 +350,8 @@ Alternatively, you may also configure you favorite channels. To do so, don't use
 
 Sometimes, you will launch an app or switch to a channel that is not on this list. In those cases, the plugin will need to switch to a default option. 
 You can customize the name of this option by specifying `default_input`.
+
+**Mind you**, if you had the TV already added to HomeKit, it may take up to a few hours to see the inputs. HomeKit is really slow with things like updating accessories.
 
 ## Advanced Wake On LAN (WOL) config
 
