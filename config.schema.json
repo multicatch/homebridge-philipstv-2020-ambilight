@@ -442,13 +442,13 @@
                                 "required": false
                               }
                             }
+                          },
+                          "action": {
+                            "type": "string",
+                            "required": false,
+                            "default": "android.intent.action.MAIN"
                           }
                         }
-                      },
-                      "action": {
-                        "type": "string",
-                        "required": false,
-                        "default": "android.intent.action.MAIN"
                       }
                     }
                   },

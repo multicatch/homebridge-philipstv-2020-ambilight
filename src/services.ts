@@ -62,11 +62,11 @@ const DEFAULT_ACTION = 'android.intent.action.MAIN';
 
 export interface TVActionLaunch {
   intent: TVIntent,
-  action?: string,
 }
 
 export interface TVIntent {
-  component: TVApp,
+  component?: TVApp,
+  action?: string,
 }
 
 export interface TVApp {
@@ -256,8 +256,13 @@ export class TVService extends PlatformService {
   }
 
   async launch(app: TVActionLaunch) {
-    if (!app.action) {
-      app.action = DEFAULT_ACTION;
+    if (!app.intent) {
+      app.intent = {
+        action: DEFAULT_ACTION,
+      };
+    }
+    if (!app.intent.action) {
+      app.intent.action = DEFAULT_ACTION;
     }
     await this.httpClient.fetchAPI('activities/launch', 'POST', app);
   }
@@ -286,7 +291,7 @@ export class TVService extends PlatformService {
         matches = entry.channel === currentChannel;
       } else if (entry.launch) {
         const component = entry.launch.intent.component;
-        matches = component.packageName === currentApp.packageName && component.className === currentApp.className;
+        matches = component?.packageName === currentApp.packageName && component.className === currentApp.className;
       }
 
       if (matches) {
@@ -312,7 +317,7 @@ export class TVService extends PlatformService {
       this.httpClient.fetchAPI('activities/current')
         .then(data => {
           const resp = data as TVIntent;
-          return resp.component;
+          return resp.component || DEFAULT_APP;
         })
     , DEFAULT_APP);
   }
