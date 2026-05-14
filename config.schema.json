@@ -459,6 +459,27 @@
                   }
                 }
               }
+            },
+            "custom_buttons": {
+              "title": "Custom buttons (TV remote buttons) as switches in Apple Home",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "title": "Button name in Apple Home",
+                    "type": "string",
+                    "required": true
+                  },
+                  "buttonSequence": {
+                    "title": "TV button sequence to perform on click",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
             }
           }
         }

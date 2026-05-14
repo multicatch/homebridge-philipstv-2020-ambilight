@@ -861,3 +861,50 @@ export class TVAmbilightService extends PlatformService {
     }
   }
 }
+
+
+/** 
+ * 
+ * TV BUTTON SERVICE - TV buttons exposed in Apple Home (not in the remote)
+ * 
+*/
+
+export interface TVButtonConfig {
+  name: string,
+  buttonSequence: string[],
+}
+
+export class TVStatelessButtonService {
+  private service?: Service;
+
+  constructor(
+    accessory: PlatformAccessory,
+    private readonly httpClient: HttpClient,
+    characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+    private readonly config: TVButtonConfig,
+  ) {
+    this.service = accessory.addService(serviceType.Switch, 'TV Button ' + config.name, 'tvbutton' + config.name);
+    this.service.setCharacteristic(characteristic.Name, config.name);
+    this.service.setCharacteristic(characteristic.ConfiguredName, config.name);
+    this.service.getCharacteristic(characteristic.On)
+      .onGet(this.getOn.bind(this))
+      .onSet(this.setOn.bind(this));
+  }
+
+  async setOn(newState: CharacteristicValue) {
+    if (!newState) {
+      return;
+    }
+
+    for (const value of this.config.buttonSequence) {
+      await this.httpClient.fetchAPI(KEY_API, 'POST', {
+        'key': value,
+      });
+    }
+  }
+
+  async getOn(): Promise<CharacteristicValue> {
+    return new Promise(resolve => resolve(false));
+  }
+}

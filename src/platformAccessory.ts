@@ -1,7 +1,9 @@
 import { API, Categories, Characteristic, Logger, type PlatformAccessory, type Service } from 'homebridge';
 
 import { HttpClient, WOLCaster } from './protocol.js';
-import { AmbilightCurrentStyle, Refreshable, TVActivity, TVAmbilightService, TVScreenService, TVService, TVSpeakerService } from './services.js';
+import { AmbilightCurrentStyle, Refreshable, TVActivity, TVAmbilightService, TVButtonConfig, TVScreenService, 
+  TVService, TVSpeakerService, 
+  TVStatelessButtonService } from './services.js';
 import { Log } from './logger.js';
 import { Options } from 'wakeonlan';
 
@@ -22,6 +24,7 @@ interface PhilipsTVConfig {
   screen_switch?: boolean;
   inputs?: TVActivity[];
   default_input?: string;
+  custom_buttons?: TVButtonConfig[];
 }
 
 export enum AmbilightMode {
@@ -97,6 +100,8 @@ export class PhilipsTVAccessory {
     
     const tvScreen = this.setupTVScreen(api, this.accessory, characteristic, serviceType, tvService, config);
     this.setupAmbilight(api, this.accessory, characteristic, serviceType, tvService, tvScreen, config);
+
+    this.setupButtons(api, this.accessory, characteristic, serviceType, config);
     
     const metadata = config.metadata;
     this.accessory.getService(serviceType.AccessoryInformation)!
@@ -109,10 +114,15 @@ export class PhilipsTVAccessory {
   }
 
   static allUUIDs(api: API, config: PhilipsTVConfig): string[] {
+    const buttons = [];
+    for (let i = 0; i < (config.custom_buttons?.length || 0); i++) {
+      buttons.push(this.buttonUUIDFromID(api, config, i));
+    }
     return [
       this.tvUUID(api, config),
       this.tvScreenUUID(api, config),
       this.ambilightUUID(api, config),
+      ...buttons,
     ];
   }
 
@@ -126,6 +136,15 @@ export class PhilipsTVAccessory {
 
   static ambilightUUID(api: API, config: PhilipsTVConfig): string {
     return api.hap.uuid.generate(this.tvUUID(api, config) + '_ambilight');
+  }
+
+  static buttonUUID(api: API, config: PhilipsTVConfig, button: TVButtonConfig): string {
+    const id = config.custom_buttons?.indexOf(button) || 0;
+    return PhilipsTVAccessory.buttonUUIDFromID(api, config, id);
+  }
+
+  static buttonUUIDFromID(api: API, config: PhilipsTVConfig, id: number): string {
+    return api.hap.uuid.generate(this.tvUUID(api, config) + '_button_' + id);
   }
 
   getAccessories(): PlatformAccessory[] {
@@ -186,6 +205,40 @@ export class PhilipsTVAccessory {
     tvScreen.addDependant(ambilight);
     this.refreshables.push(ambilight);
     return ambilight;
+  }
+
+  private setupButtons(api: API, accessory: PlatformAccessory,
+    characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+    config: PhilipsTVConfig,
+  ) {
+    if (!config.custom_buttons) {
+      return;
+    }
+    for (const buttonConfig of config.custom_buttons) {
+      this.setupButton(api, accessory, characteristic, serviceType, config, buttonConfig);
+    }
+  }
+
+  private setupButton(api: API, accessory: PlatformAccessory,
+    characteristic: typeof Characteristic,
+    serviceType: typeof Service,
+    config: PhilipsTVConfig,
+    buttonConfig: TVButtonConfig,
+  ): TVStatelessButtonService {
+    const ungroupAccessories = config.ungroup_accessories === true;
+    let tvButtonAccessory: PlatformAccessory;
+    if (ungroupAccessories) {
+      tvButtonAccessory = new api.platformAccessory(accessory.displayName + ' Button ' + buttonConfig.name, 
+        PhilipsTVAccessory.buttonUUID(api, config, buttonConfig));
+      tvButtonAccessory.category = Categories.SWITCH;
+      this.accessories.push(tvButtonAccessory);
+    } else {
+      tvButtonAccessory = accessory;
+    }
+    this.log.info('Adding custom button %s (sequence: %s)', buttonConfig.name, buttonConfig.buttonSequence);
+    const tvButton = new TVStatelessButtonService(tvButtonAccessory, this.httpClient, characteristic, serviceType, buttonConfig);
+    return tvButton;
   }
 
   private configureAutoUpdate(config: PhilipsTVConfig) {

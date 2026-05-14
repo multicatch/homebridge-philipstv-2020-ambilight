@@ -57,7 +57,17 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                     "ambilight_mode": "on_off",
                     "ambilight_options": {},
                     "ungroup_accessories": false,
-                    "screen_switch": true
+                    "screen_switch": true,
+                    "custom_buttons": [
+                        {
+                            "name": "Teletext",
+                            "buttonSequence": ["Teletext"]
+                        },
+                        {
+                            "name": "2nd Source",
+                            "buttonSequence": ["Source", "CursorDown", "CursorDown", "Confirm"]
+                        }
+                    ]
                 }
             ],
             "platform": "PhilipsTV2020Platform"
@@ -83,6 +93,7 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
 | `screen_switch` | Show a dedicated switch for TV Screen (useful for OLEDs - you can turn off the screen without turning off the TV to prevent burn-in). |
 | `default_input` | If using `inputs`: This is the name of an input that will be used when the TV is off or in unknown state. |
 | `inputs` | An array of apps or channels you wish to see in HomeKit. |
+| `custom_buttons` | Array of custom buttons exposed as switches in Apple Home. Clicking the switch will simulate TV remote buttons. |
 
 **Note:** the delay/time unit is *milliseconds*. 30000 means **30 seconds**.
 
@@ -251,6 +262,69 @@ To enable it, add the following mapping:
     ]
 ```
 
+### Custom buttons
+
+The iPhone TV widget is pretty limited - you don't have all the buttons from the TV remote and also you cannot make any automations with it.
+It's just a very limited local-only control of the TV. And also very hidden (you can only access it from the control center).
+
+You can expose TV remote buttons to Apple Home by using `custom_buttons`. 
+
+For example, you may expose *Play* and *Pause* for your automations:
+
+![TV in Apple Home with custom buttons](./doc/custom_buttons.jpg)
+
+When you define a button in this section of config.json, it will be added to Apple Home as a switch. 
+Clicking the switch will trigger a TV remote press.
+
+For example, if you want to have the *Play* button as a separate button in Apple Home, you may add the following configuration::
+
+```json
+    "platforms": [ 
+        {
+            "tvs": [
+                {
+                    ...
+                    "custom_buttons": [
+                        { 
+                            "name": "TV Play",
+                            "buttonSequence": [ "Play" ]
+                        }
+                    ]
+                }
+            ],
+            "platform": "PhilipsTV2020Platform"
+        }
+    ]
+```
+
+After adding this config, a new switch named `TV Play` will be added to your TV in Apple Home. Clicking it will trigger `Play` button press.
+
+**Note**: Those switches will ALWAYS immediately go back to OFF position.
+
+You may only used buttons supported by your TV in `buttonSequence`. See the above `philips_key` explaination for more details.
+
+You may also define a sequence of TV remote button clicks that will be performed:
+
+```json
+    "platforms": [ 
+        {
+            "tvs": [
+                {
+                    ...
+                    "custom_buttons": [
+                        { 
+                            "name": "My favorite channel",
+                            "buttonSequence": [ "Digit6", "Digit7" ]
+                        }
+                    ]
+                }
+            ],
+            "platform": "PhilipsTV2020Platform"
+        }
+    ]
+```
+
+This way, when you click this switch in Apple Home, your TV will receive `6` and `7`, no need to make two buttons for that.
 
 ## Advanced Ambilight config
 
