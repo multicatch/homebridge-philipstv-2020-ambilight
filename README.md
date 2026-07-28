@@ -65,7 +65,8 @@ Just use the Homebrige UI to configure it. But if you prefer JSON config, use th
                         },
                         {
                             "name": "2nd Source",
-                            "buttonSequence": ["Source", "CursorDown", "CursorDown", "Confirm"]
+                            "buttonSequence": ["Source", "CursorDown", "CursorDown", "Confirm"],
+                            "buttonDelay": 200
                         }
                     ]
                 }
@@ -314,7 +315,8 @@ You may also define a sequence of TV remote button clicks that will be performed
                     "custom_buttons": [
                         { 
                             "name": "My favorite channel",
-                            "buttonSequence": [ "Digit6", "Digit7" ]
+                            "buttonSequence": [ "Digit6", "Digit7" ],
+                            "buttonDelay": 300
                         }
                     ]
                 }
@@ -325,6 +327,8 @@ You may also define a sequence of TV remote button clicks that will be performed
 ```
 
 This way, when you click this switch in Apple Home, your TV will receive `6` and `7`, no need to make two buttons for that.
+
+A `buttonDelay` is a delay between button clicks. By default, it's 300 ms. You can change this property if this plugin sends the buttons too fast.
 
 ## Advanced Ambilight config
 

@@ -872,6 +872,7 @@ export class TVAmbilightService extends PlatformService {
 export interface TVButtonConfig {
   name: string,
   buttonSequence: string[],
+  buttonDelay?: number,
 }
 
 export class TVStatelessButtonService {
@@ -901,6 +902,7 @@ export class TVStatelessButtonService {
       await this.httpClient.fetchAPI(KEY_API, 'POST', {
         'key': value,
       });
+      await delay(this.config.buttonDelay ?? 300);
     }
   }
 

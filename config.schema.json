@@ -477,6 +477,11 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "buttonDelay": {
+                    "title": "Delay between button presses [ms]",
+                    "type": "integer",
+                    "required": false
                   }
                 }
               }
